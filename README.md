@@ -2,6 +2,8 @@
 
 码上瘦身是一个本地离线的视频转码瘦身桌面工具，支持拖入单个视频、多个视频或文件夹，批量输出 MP4 / MOV / MKV，并在完成后标注格式、路径、色深、分辨率和体积变化。
 
+最新安装包下载见 GitHub Releases：https://github.com/YITHINMAO/mashang-slim/releases
+
 ## 成品包
 
 - macOS Apple Silicon：`release/码上瘦身-0.1.3-arm64.dmg`
