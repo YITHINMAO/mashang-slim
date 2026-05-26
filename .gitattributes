@@ -1,0 +1,5 @@
+*.png binary
+*.icns binary
+*.ico binary
+*.exe binary
+vendor/ffmpeg/** binary

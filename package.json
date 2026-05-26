@@ -1,0 +1,19 @@
+{
+  "name": "mashang-slim",
+  "version": "0.1.3",
+  "description": "码上瘦身，本地离线视频转码瘦身工具。",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "check": "node scripts/check-runtime.js",
+    "fetch:ffmpeg-win": "node scripts/fetch-windows-ffmpeg.js",
+    "package:mac": "electron-builder --mac dmg --config electron-builder.json",
+    "package:win": "electron-builder --win nsis portable --x64 --config electron-builder.json"
+  },
+  "devDependencies": {
+    "electron": "30.5.1",
+    "electron-builder": "^26.0.12"
+  }
+}

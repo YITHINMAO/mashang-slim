@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>码上瘦身</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="splashScreen" class="splash-screen" aria-hidden="true">
+      <div class="splash-stack">
+        <div class="splash-mark-wrap">
+          <span class="splash-ring ring-a"></span>
+          <span class="splash-ring ring-b"></span>
+          <img class="splash-mark" src="../assets/icon.png" alt="" />
+        </div>
+        <strong>码上瘦身</strong>
+        <div class="splash-meter"><span></span></div>
+      </div>
+    </div>
+
+    <main class="app-shell">
+      <section class="hero-band">
+        <div class="brand-lockup">
+          <img class="brand-mark" src="../assets/icon.png" alt="" />
+          <div>
+            <h1>码上瘦身</h1>
+            <p id="runtimeStatus">正在检查本机转码环境...</p>
+          </div>
+        </div>
+        <div class="status-pill" id="bitDepthGuard">位深保护待命</div>
+      </section>
+
+      <section class="workspace-grid">
+        <div class="left-panel">
+          <div id="dropZone" class="drop-zone">
+            <input id="fileInput" type="file" accept="video/*,.mkv,.mov,.m4v,.mts,.m2ts,.ts,.avi" multiple />
+            <div class="drop-visual" aria-hidden="true">
+              <div class="film-card">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            </div>
+            <strong>拖入视频、多个视频或文件夹</strong>
+            <small>本地离线处理，自动排队，不上传文件</small>
+          </div>
+
+          <div class="section-title">
+            <h2>视频队列</h2>
+            <div class="button-cluster">
+              <button class="ghost-button" id="pickVideosButton" type="button">添加视频</button>
+              <button class="ghost-button" id="pickFoldersButton" type="button">添加文件夹</button>
+              <button class="ghost-button danger" id="clearListButton" type="button">清空</button>
+            </div>
+          </div>
+          <div id="fileList" class="file-list empty">
+            <p>还没有选择视频。</p>
+          </div>
+        </div>
+
+        <aside class="right-panel">
+          <div class="settings-block">
+            <label class="field-label" for="codecSelect">输出编码</label>
+            <select id="codecSelect">
+              <option value="h265">H.265</option>
+              <option value="h264">H.264</option>
+            </select>
+          </div>
+
+          <div class="settings-block">
+            <label class="field-label" for="outputFormatSelect">输出格式</label>
+            <select id="outputFormatSelect">
+              <option value="mp4" selected>MP4（推荐，默认）</option>
+              <option value="mov">MOV</option>
+              <option value="mkv">MKV</option>
+            </select>
+          </div>
+
+          <div class="settings-block settings-card">
+            <div class="section-title compact">
+              <h2>队列设置</h2>
+              <span id="queueStatus">0 待处理</span>
+            </div>
+            <label class="field-label" for="concurrencyInput">并发上限</label>
+            <div class="number-row">
+              <input id="concurrencyInput" min="1" max="4" step="1" value="2" type="number" />
+              <span>个任务</span>
+            </div>
+            <small class="setting-note">默认 2 个并发，比较稳，不会把机器一下跑满。</small>
+          </div>
+
+          <div class="settings-block">
+            <div class="segmented" role="tablist" aria-label="质量模式">
+              <button id="modePreset" class="active" type="button">预设</button>
+              <button id="modeCustom" type="button">手动码率</button>
+            </div>
+          </div>
+
+          <div id="presetPanel" class="settings-block">
+            <label class="field-label">质量预设</label>
+            <div class="preset-grid">
+              <button class="preset-button" data-preset="compact" type="button">
+                <strong>轻巧</strong>
+                <span id="presetCompact">-</span>
+              </button>
+              <button class="preset-button active" data-preset="balanced" type="button">
+                <strong>推荐</strong>
+                <span id="presetBalanced">-</span>
+              </button>
+              <button class="preset-button" data-preset="high" type="button">
+                <strong>高质量</strong>
+                <span id="presetHigh">-</span>
+              </button>
+              <button class="preset-button" data-preset="master" type="button">
+                <strong>近源</strong>
+                <span id="presetMaster">-</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-block">
+            <div class="bitrate-header">
+              <label class="field-label" for="bitrateSlider">码率</label>
+              <button id="applyRecommendedButton" class="text-button" type="button">套用推荐</button>
+            </div>
+            <div class="bitrate-readout">
+              <span id="bitrateValue">- Mbps</span>
+              <small id="recommendedText">推荐码率：-</small>
+            </div>
+            <input id="bitrateSlider" min="0.5" max="120" step="0.1" value="8" type="range" />
+            <div class="number-row">
+              <input id="bitrateInput" min="0.5" max="240" step="0.1" value="8" type="number" />
+              <span>Mbps</span>
+            </div>
+            <label class="check-row">
+              <input id="bitrateProtection" type="checkbox" />
+              <span>保守模式：目标码率不低于源视频码率</span>
+            </label>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-block">
+              <label class="field-label" for="encoderPreset">编码速度</label>
+              <select id="encoderPreset">
+                <option value="slow">慢 / 更小</option>
+                <option value="medium" selected>均衡</option>
+                <option value="fast">快</option>
+                <option value="veryfast">很快</option>
+              </select>
+            </div>
+            <div class="settings-block">
+              <label class="field-label" for="audioMode">音频</label>
+              <select id="audioMode">
+                <option value="auto" selected>自动兼容</option>
+                <option value="copy">强制保留原轨</option>
+                <option value="aac">AAC 192k</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-block">
+            <label class="field-label">输出文件夹</label>
+            <div class="path-row">
+              <span id="outputDir">-</span>
+              <button id="chooseOutputButton" class="ghost-button" type="button">选择</button>
+            </div>
+          </div>
+
+          <div class="guard-panel" id="guardPanel">
+            <strong id="guardTitle">等待视频</strong>
+            <span id="guardDescription">选择视频后会显示源位深与输出位深。</span>
+          </div>
+
+          <button id="startButton" class="primary-button" type="button" disabled>开始队列</button>
+        </aside>
+      </section>
+
+      <section class="progress-band">
+        <div class="progress-copy">
+          <strong id="progressTitle">待开始</strong>
+          <span id="progressMeta">添加视频或文件夹后开始。</span>
+        </div>
+        <div class="progress-track">
+          <div id="progressBar"></div>
+        </div>
+        <div class="action-row">
+          <button id="cancelButton" class="ghost-button danger" type="button" disabled>停止队列</button>
+          <button id="revealButton" class="ghost-button" type="button" disabled>显示文件</button>
+        </div>
+      </section>
+
+      <section class="results-band">
+        <div class="section-title compact">
+          <h2>输出标注</h2>
+          <span id="resultsHint">完成后会在这里列出格式、路径、色深、分辨率和体积变化。</span>
+        </div>
+        <div id="resultsList" class="results-list empty">
+          <p>暂无输出。</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
