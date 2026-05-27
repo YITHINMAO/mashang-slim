@@ -25,10 +25,17 @@
           <img class="brand-mark" src="../assets/icon.png" alt="" />
           <div>
             <h1>码上瘦身</h1>
+            <button id="authorLink" class="author-link" type="button">开发者：懿新 · v0.1.5 · 2026-05-27</button>
             <p id="runtimeStatus">正在检查本机转码环境...</p>
           </div>
         </div>
-        <div class="status-pill" id="bitDepthGuard">位深保护待命</div>
+        <div class="hero-actions">
+          <div class="status-pill" id="bitDepthGuard">位深保护待命</div>
+          <button id="openSettingsButton" class="settings-trigger" type="button">
+            <span id="settingsButtonLabel">设置</span>
+            <small id="hardwareStatus">硬件加速：自动</small>
+          </button>
+        </div>
       </section>
 
       <section class="workspace-grid">
@@ -135,7 +142,7 @@
             </div>
             <label class="check-row">
               <input id="bitrateProtection" type="checkbox" />
-              <span>保守模式：目标码率不低于源视频码率</span>
+              <span id="bitrateProtectionLabel">保守模式：目标码率不低于源视频码率</span>
             </label>
           </div>
 
@@ -160,7 +167,7 @@
           </div>
 
           <div class="settings-block">
-            <label class="field-label">输出文件夹</label>
+            <label id="outputDirLabel" class="field-label">输出文件夹</label>
             <div class="path-row">
               <span id="outputDir">-</span>
               <button id="chooseOutputButton" class="ghost-button" type="button">选择</button>
@@ -185,6 +192,7 @@
           <div id="progressBar"></div>
         </div>
         <div class="action-row">
+          <button id="pauseButton" class="ghost-button" type="button" disabled>暂停队列</button>
           <button id="cancelButton" class="ghost-button danger" type="button" disabled>停止队列</button>
           <button id="revealButton" class="ghost-button" type="button" disabled>显示文件</button>
         </div>
@@ -200,6 +208,46 @@
         </div>
       </section>
     </main>
+
+    <div id="settingsOverlay" class="settings-overlay" hidden>
+      <div id="settingsBackdrop" class="settings-backdrop"></div>
+      <aside class="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settingsDrawerTitle">
+        <div class="drawer-header">
+          <div>
+            <h2 id="settingsDrawerTitle">设置</h2>
+            <p id="settingsDrawerSubtitle">低频选项集中放在这里，首页保持清爽。</p>
+          </div>
+          <button id="closeSettingsButton" class="icon-button" type="button" aria-label="关闭设置">×</button>
+        </div>
+
+        <div class="settings-block settings-card">
+          <div class="section-title compact">
+            <h2 id="advancedSettingsTitle">高级设置</h2>
+          </div>
+          <label class="check-row">
+            <input id="hardwareAcceleration" type="checkbox" checked />
+            <span id="hardwareAccelerationLabel">启用硬件加速</span>
+          </label>
+          <label class="field-label" for="hardwareMode">硬件模式</label>
+          <select id="hardwareMode">
+            <option value="auto" selected>自动选择</option>
+            <option value="apple">Apple VideoToolbox</option>
+            <option value="nvidia">NVIDIA NVENC</option>
+            <option value="intel">Intel Quick Sync</option>
+            <option value="amd">AMD AMF</option>
+            <option value="software">仅软件编码</option>
+          </select>
+        </div>
+
+        <div class="settings-block settings-card">
+          <label class="field-label" for="languageSelect">语言</label>
+          <select id="languageSelect">
+            <option value="zh" selected>中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </aside>
+    </div>
 
     <script src="./renderer.js"></script>
   </body>

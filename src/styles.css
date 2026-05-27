@@ -243,15 +243,33 @@ h1 {
   letter-spacing: 0;
 }
 
+.author-link {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  color: #7b6a58;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: left;
+  -webkit-app-region: no-drag;
+}
+
+.author-link:hover {
+  color: var(--sage);
+}
+
 h2 {
   font-size: 17px;
   letter-spacing: 0;
 }
 
 #runtimeStatus {
-  margin-top: 7px;
+  margin-top: 5px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .status-pill {
@@ -263,6 +281,42 @@ h2 {
   background: rgba(222, 241, 226, 0.82);
   font-size: 13px;
   font-weight: 700;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: no-drag;
+}
+
+.settings-trigger {
+  display: grid;
+  gap: 2px;
+  min-width: 112px;
+  padding: 8px 11px;
+  border: 1px solid rgba(233, 184, 104, 0.4);
+  border-radius: 8px;
+  color: #5c4c3c;
+  background: rgba(255, 253, 247, 0.76);
+  box-shadow: 0 8px 20px rgba(107, 82, 45, 0.08);
+  text-align: left;
+}
+
+.settings-trigger span {
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.settings-trigger small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.settings-trigger:hover {
+  border-color: rgba(88, 125, 107, 0.42);
+  background: #fffdf7;
 }
 
 .workspace-grid {
@@ -486,6 +540,7 @@ h2 {
 .remove-button,
 .select-button,
 .ghost-button,
+.icon-button,
 .text-button,
 .primary-button,
 .preset-button,
@@ -515,6 +570,18 @@ h2 {
   font-size: 18px;
 }
 
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: #6c5d4e;
+  background: #fff3d8;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 650;
+}
+
 .right-panel {
   align-self: start;
   display: grid;
@@ -537,6 +604,69 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 253, 247, 0.58);
+}
+
+.settings-overlay[hidden] {
+  display: none;
+}
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 18;
+  display: grid;
+  justify-items: end;
+}
+
+.settings-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(61, 50, 38, 0.18);
+  backdrop-filter: blur(5px);
+}
+
+.settings-drawer {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  width: 360px;
+  min-height: 100vh;
+  padding: 24px 20px;
+  border-left: 1px solid rgba(234, 220, 199, 0.94);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.98), rgba(248, 251, 237, 0.98)),
+    repeating-linear-gradient(90deg, transparent 0 18px, rgba(255, 226, 168, 0.16) 18px 19px);
+  box-shadow: -18px 0 42px rgba(107, 82, 45, 0.16);
+  animation: drawer-in 180ms ease-out both;
+}
+
+.drawer-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 4px;
+}
+
+.drawer-header p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .setting-note {
@@ -722,7 +852,7 @@ input[type="range"] {
 
 .progress-band {
   display: grid;
-  grid-template-columns: 220px 1fr 190px;
+  grid-template-columns: 250px 1fr 280px;
   align-items: center;
   gap: 16px;
   margin-top: 18px;

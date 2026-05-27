@@ -15,6 +15,7 @@
   ],
   "icon": "assets/icon.png",
   "mac": {
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "category": "public.app-category.video",
     "icon": "assets/icon.icns",
     "extraResources": [
@@ -32,7 +33,6 @@
   },
   "win": {
     "icon": "assets/icon.ico",
-    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "extraResources": [
       {
         "from": "vendor/ffmpeg/win32-x64",
@@ -48,10 +48,14 @@
     ]
   },
   "nsis": {
+    "artifactName": "${productName}-${version}-${arch}-安装程序.${ext}",
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "码上瘦身"
+  },
+  "portable": {
+    "artifactName": "${productName}-${version}-${arch}-便携版.${ext}"
   }
 }

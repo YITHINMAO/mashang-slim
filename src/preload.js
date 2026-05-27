@@ -9,7 +9,10 @@ contextBridge.exposeInMainWorld("transcoder", {
   probeVideo: (filePath) => ipcRenderer.invoke("video:probe", filePath),
   startTranscode: (payload) => ipcRenderer.invoke("transcode:start", payload),
   cancelTranscode: (jobId) => ipcRenderer.invoke("transcode:cancel", jobId),
+  pauseTranscode: (jobId) => ipcRenderer.invoke("transcode:pause", jobId),
+  resumeTranscode: (jobId) => ipcRenderer.invoke("transcode:resume", jobId),
   revealFile: (filePath) => ipcRenderer.invoke("file:reveal", filePath),
+  openExternal: (url) => ipcRenderer.invoke("link:openExternal", url),
   onProgress: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on("transcode:progress", listener);

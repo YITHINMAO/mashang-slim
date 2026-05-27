@@ -12,13 +12,27 @@ const state = {
   outputFormat: "mp4",
   bitrateMbps: 8,
   maxConcurrent: 2,
+  hardwareAcceleration: true,
+  hardwareMode: "auto",
+  language: localStorage.getItem("mashang-language") || "zh",
   queueRunning: false,
+  queuePaused: false,
   pumping: false,
+  batchStartedAt: 0,
+  batchCompletedAt: 0,
   lastOutputPath: ""
 };
 
 const els = {
   splashScreen: document.querySelector("#splashScreen"),
+  authorLink: document.querySelector("#authorLink"),
+  openSettingsButton: document.querySelector("#openSettingsButton"),
+  settingsButtonLabel: document.querySelector("#settingsButtonLabel"),
+  settingsOverlay: document.querySelector("#settingsOverlay"),
+  settingsBackdrop: document.querySelector("#settingsBackdrop"),
+  closeSettingsButton: document.querySelector("#closeSettingsButton"),
+  settingsDrawerTitle: document.querySelector("#settingsDrawerTitle"),
+  settingsDrawerSubtitle: document.querySelector("#settingsDrawerSubtitle"),
   runtimeStatus: document.querySelector("#runtimeStatus"),
   bitDepthGuard: document.querySelector("#bitDepthGuard"),
   dropZone: document.querySelector("#dropZone"),
@@ -31,6 +45,12 @@ const els = {
   outputFormatSelect: document.querySelector("#outputFormatSelect"),
   queueStatus: document.querySelector("#queueStatus"),
   concurrencyInput: document.querySelector("#concurrencyInput"),
+  advancedSettingsTitle: document.querySelector("#advancedSettingsTitle"),
+  hardwareStatus: document.querySelector("#hardwareStatus"),
+  hardwareAcceleration: document.querySelector("#hardwareAcceleration"),
+  hardwareAccelerationLabel: document.querySelector("#hardwareAccelerationLabel"),
+  hardwareMode: document.querySelector("#hardwareMode"),
+  languageSelect: document.querySelector("#languageSelect"),
   modePreset: document.querySelector("#modePreset"),
   modeCustom: document.querySelector("#modeCustom"),
   presetPanel: document.querySelector("#presetPanel"),
@@ -44,15 +64,18 @@ const els = {
   bitrateSlider: document.querySelector("#bitrateSlider"),
   bitrateInput: document.querySelector("#bitrateInput"),
   bitrateProtection: document.querySelector("#bitrateProtection"),
+  bitrateProtectionLabel: document.querySelector("#bitrateProtectionLabel"),
   applyRecommendedButton: document.querySelector("#applyRecommendedButton"),
   encoderPreset: document.querySelector("#encoderPreset"),
   audioMode: document.querySelector("#audioMode"),
   outputDir: document.querySelector("#outputDir"),
+  outputDirLabel: document.querySelector("#outputDirLabel"),
   chooseOutputButton: document.querySelector("#chooseOutputButton"),
   guardPanel: document.querySelector("#guardPanel"),
   guardTitle: document.querySelector("#guardTitle"),
   guardDescription: document.querySelector("#guardDescription"),
   startButton: document.querySelector("#startButton"),
+  pauseButton: document.querySelector("#pauseButton"),
   cancelButton: document.querySelector("#cancelButton"),
   revealButton: document.querySelector("#revealButton"),
   progressTitle: document.querySelector("#progressTitle"),
@@ -62,14 +85,258 @@ const els = {
   resultsList: document.querySelector("#resultsList")
 };
 
+const I18N = {
+  zh: {
+    appName: "码上瘦身",
+    checkingRuntime: "正在检查本机转码环境...",
+    desktopOnly: "请在桌面应用中运行。",
+    cannotAccessDesktop: "无法访问桌面能力",
+    electronMissing: "当前页面没有连接到 Electron 主进程。",
+    runtimeFailed: "环境检查失败：{message}",
+    runtimeReady: "{version}，离线队列转码就绪",
+    runtimeMissing: "缺少 ffmpeg 或 ffprobe。",
+    bitDepthStandby: "位深保护待命",
+    addVideos: "添加视频",
+    addFolders: "添加文件夹",
+    clear: "清空",
+    noVideos: "还没有选择视频。",
+    queueTitle: "视频队列",
+    outputCodec: "输出编码",
+    outputFormat: "输出格式",
+    outputMp4: "MP4（推荐，默认）",
+    queueSettings: "队列设置",
+    concurrencyLimit: "并发上限",
+    tasksUnit: "个任务",
+    concurrencyNote: "默认 2 个并发，比较稳，不会把机器一下跑满。",
+    settingsButton: "设置",
+    settingsTitle: "设置",
+    settingsSubtitle: "低频选项集中放在这里，首页保持清爽。",
+    closeSettings: "关闭设置",
+    advancedSettings: "高级设置",
+    hardwareEnabled: "启用硬件加速",
+    hardwareMode: "硬件模式",
+    hardwareAuto: "自动选择",
+    hardwareSoftware: "仅软件编码",
+    hardwareStatusAuto: "硬件加速：自动",
+    hardwareStatusOff: "硬件加速：关闭",
+    language: "语言",
+    presetMode: "预设",
+    customBitrate: "手动码率",
+    qualityPreset: "质量预设",
+    compact: "轻巧",
+    balanced: "推荐",
+    high: "高质量",
+    master: "近源",
+    bitrate: "码率",
+    applyRecommended: "套用推荐",
+    recommended: "推荐码率：{value}",
+    conservativeMode: "保守模式：目标码率不低于源视频码率",
+    encoderSpeed: "编码速度",
+    speedSlow: "慢 / 更小",
+    speedMedium: "均衡",
+    speedFast: "快",
+    speedVeryFast: "很快",
+    audio: "音频",
+    audioAuto: "自动兼容",
+    audioCopy: "强制保留原轨",
+    audioAac: "AAC 192k",
+    outputFolder: "输出文件夹",
+    choose: "选择",
+    startQueue: "开始队列",
+    pauseQueue: "暂停队列",
+    resumeQueue: "继续队列",
+    stopQueue: "停止队列",
+    reveal: "显示文件",
+    pending: "待开始",
+    addToStart: "添加视频或文件夹后开始。",
+    outputNotes: "输出标注",
+    resultsHint: "完成后会在这里列出格式、路径、色深、分辨率和体积变化。",
+    noResults: "暂无输出。",
+    dropTitle: "拖入视频、多个视频或文件夹",
+    dropSubtitle: "本地离线处理，自动排队，不上传文件",
+    author: "开发者：懿新 · v{version} · {date}",
+    waitingVideo: "等待视频",
+    waitingVideoDescription: "选择视频后会显示源位深、分辨率、原始大小和预计输出大小。",
+    unreadableVideo: "无法读取视频",
+    waitUsableVideo: "等待可用视频",
+    bitDepthBlocked: "当前编码不可保持位深",
+    bitDepthGuardBlocked: "位深保护拦截",
+    outputProtection: "输出保护开启",
+    guardReady: "源视频 {source}，输出为 {choice}，使用 {pixFmt}，目标 {bitrate} Mbps，预计输出约 {size}，音频{audio}，{shrink}，完成后会再次验证。",
+    shrinkConservative: "保守模式会抬高到源视频码率",
+    shrinkNormal: "会按所选码率重新编码瘦身",
+    keepBitDepth: "保持 {depth}-bit / {resolution}",
+    envNotReady: "环境还没有准备好。",
+    encoderCapsMissing: "未找到编码器能力。",
+    unsupportedBitDepth: "{encoder} 不支持 {depth}-bit 的 {pixFmt} 输出。",
+    status: {
+      loading: "读取中",
+      ready: "待处理",
+      queued: "排队中",
+      starting: "启动中",
+      running: "转码中",
+      paused: "已暂停",
+      cancelling: "取消中",
+      done: "已完成",
+      error: "失败",
+      cancelled: "已取消"
+    },
+    selected: "已选",
+    select: "选择",
+    sourceFile: "源文件 {size}",
+    estimatedOutput: "预计输出 {size}",
+    currentEta: "当前预计 {eta}",
+    queueEta: "队列预计 {eta}",
+    elapsed: "耗时 {time}",
+    hardware: "硬件 {encoder}",
+    software: "软件编码",
+    fallbackSoftware: "已回退软件编码",
+    queueStatus: "{pending} 待处理 · {running} 运行 · {paused} 暂停 · {done} 完成",
+    queuePausedTitle: "队列已暂停 {percent}%",
+    queueRunningTitle: "队列处理中 {percent}%",
+    queueRunningMeta: "并发上限 {limit} · {running} 运行 · {queued} 排队 · 当前 {currentEta} · 全部 {queueEta}",
+    queueDone: "队列完成",
+    completedOutputs: "完成 {count} 个输出",
+    noAudio: "无音轨",
+    audioKeep: "保留原轨",
+    audioAutoAac: "自动转 AAC 192k",
+    outputSummary: "格式 {format} ({codec}){target} · 路径已生成 · 色深 {inputDepth}-bit → {outputDepth}-bit · 分辨率 {resolution} · {engine} · 原始 {sourceSize} / 输出 {outputSize} / 减少 {saved}（{savedPercent}%）{elapsed}",
+    target: " · 目标 {bitrate} Mbps",
+    batchSummary: "本批 {count} 个：原始 {source} · 输出 {output} · 共减少 {saved}（{percent}%） · 总耗时 {elapsed}",
+    incomplete: "转码没有完成。",
+    taskCancelled: "任务已取消。"
+  },
+  en: {
+    appName: "Mashang Slim",
+    checkingRuntime: "Checking local transcoding runtime...",
+    desktopOnly: "Please run this inside the desktop app.",
+    cannotAccessDesktop: "Desktop features unavailable",
+    electronMissing: "This page is not connected to the Electron main process.",
+    runtimeFailed: "Runtime check failed: {message}",
+    runtimeReady: "{version}, offline queue ready",
+    runtimeMissing: "Missing ffmpeg or ffprobe.",
+    bitDepthStandby: "Bit-depth guard ready",
+    addVideos: "Add videos",
+    addFolders: "Add folder",
+    clear: "Clear",
+    noVideos: "No videos selected.",
+    queueTitle: "Video Queue",
+    outputCodec: "Output codec",
+    outputFormat: "Output format",
+    outputMp4: "MP4 (recommended)",
+    queueSettings: "Queue",
+    concurrencyLimit: "Concurrency limit",
+    tasksUnit: "tasks",
+    concurrencyNote: "Default is 2 concurrent tasks, a steady setting for most machines.",
+    settingsButton: "Settings",
+    settingsTitle: "Settings",
+    settingsSubtitle: "Less frequent options live here so the main screen stays focused.",
+    closeSettings: "Close settings",
+    advancedSettings: "Advanced",
+    hardwareEnabled: "Enable hardware acceleration",
+    hardwareMode: "Hardware mode",
+    hardwareAuto: "Auto",
+    hardwareSoftware: "Software only",
+    hardwareStatusAuto: "Hardware: auto",
+    hardwareStatusOff: "Hardware: off",
+    language: "Language",
+    presetMode: "Preset",
+    customBitrate: "Manual bitrate",
+    qualityPreset: "Quality preset",
+    compact: "Compact",
+    balanced: "Recommended",
+    high: "High quality",
+    master: "Near source",
+    bitrate: "Bitrate",
+    applyRecommended: "Use recommended",
+    recommended: "Recommended bitrate: {value}",
+    conservativeMode: "Conservative mode: target bitrate never below source",
+    encoderSpeed: "Encoding speed",
+    speedSlow: "Slow / smaller",
+    speedMedium: "Balanced",
+    speedFast: "Fast",
+    speedVeryFast: "Very fast",
+    audio: "Audio",
+    audioAuto: "Auto compatible",
+    audioCopy: "Force copy source",
+    audioAac: "AAC 192k",
+    outputFolder: "Output folder",
+    choose: "Choose",
+    startQueue: "Start queue",
+    pauseQueue: "Pause queue",
+    resumeQueue: "Resume queue",
+    stopQueue: "Stop queue",
+    reveal: "Reveal",
+    pending: "Ready",
+    addToStart: "Add videos or folders to begin.",
+    outputNotes: "Output Notes",
+    resultsHint: "Finished outputs will list format, path, bit depth, resolution, and size changes.",
+    noResults: "No outputs yet.",
+    dropTitle: "Drop videos, multiple videos, or folders",
+    dropSubtitle: "Offline local processing, queued automatically, no uploads",
+    author: "Developer: Yixin · v{version} · {date}",
+    waitingVideo: "Waiting for video",
+    waitingVideoDescription: "Select a video to show source bit depth, resolution, original size, and estimated output.",
+    unreadableVideo: "Cannot read video",
+    waitUsableVideo: "Waiting for a readable video",
+    bitDepthBlocked: "This codec cannot preserve bit depth",
+    bitDepthGuardBlocked: "Bit-depth guard blocked",
+    outputProtection: "Output protection on",
+    guardReady: "Source {source}, output {choice}, using {pixFmt}, target {bitrate} Mbps, estimated {size}, audio {audio}, {shrink}. Verification runs after export.",
+    shrinkConservative: "conservative mode will raise bitrate to source level",
+    shrinkNormal: "will re-encode at the selected bitrate",
+    keepBitDepth: "Keep {depth}-bit / {resolution}",
+    envNotReady: "Runtime is not ready yet.",
+    encoderCapsMissing: "Encoder capability was not found.",
+    unsupportedBitDepth: "{encoder} cannot preserve {depth}-bit {pixFmt} output.",
+    status: {
+      loading: "Reading",
+      ready: "Ready",
+      queued: "Queued",
+      starting: "Starting",
+      running: "Transcoding",
+      paused: "Paused",
+      cancelling: "Cancelling",
+      done: "Done",
+      error: "Failed",
+      cancelled: "Cancelled"
+    },
+    selected: "Selected",
+    select: "Select",
+    sourceFile: "Source {size}",
+    estimatedOutput: "Estimated {size}",
+    currentEta: "Current ETA {eta}",
+    queueEta: "Queue ETA {eta}",
+    elapsed: "Elapsed {time}",
+    hardware: "Hardware {encoder}",
+    software: "Software",
+    fallbackSoftware: "Fell back to software",
+    queueStatus: "{pending} pending · {running} running · {paused} paused · {done} done",
+    queuePausedTitle: "Queue paused {percent}%",
+    queueRunningTitle: "Queue processing {percent}%",
+    queueRunningMeta: "Concurrency {limit} · {running} running · {queued} queued · current {currentEta} · all {queueEta}",
+    queueDone: "Queue complete",
+    completedOutputs: "{count} outputs complete",
+    noAudio: "no audio",
+    audioKeep: "keep source track",
+    audioAutoAac: "auto AAC 192k",
+    outputSummary: "Format {format} ({codec}){target} · Path ready · Bit depth {inputDepth}-bit → {outputDepth}-bit · Resolution {resolution} · {engine} · Source {sourceSize} / Output {outputSize} / Saved {saved} ({savedPercent}%){elapsed}",
+    target: " · Target {bitrate} Mbps",
+    batchSummary: "{count} outputs: source {source} · output {output} · saved {saved} ({percent}%) · total elapsed {elapsed}",
+    incomplete: "Transcoding did not finish.",
+    taskCancelled: "Task cancelled."
+  }
+};
+
 boot();
 
 async function boot() {
   bindUi();
+  applyLanguage();
 
   if (!api) {
-    els.runtimeStatus.textContent = "请在桌面应用中运行。";
-    setGuard("无法访问桌面能力", "当前页面没有连接到 Electron 主进程。", true);
+    els.runtimeStatus.textContent = t("desktopOnly");
+    setGuard(t("cannotAccessDesktop"), t("electronMissing"), true);
     hideSplash();
     return;
   }
@@ -79,8 +346,9 @@ async function boot() {
     state.outputDir = state.environment.defaultOutputDir || "";
     els.outputDir.textContent = state.outputDir || "-";
     updateRuntimeStatus();
+    applyLanguage();
   } catch (error) {
-    els.runtimeStatus.textContent = `环境检查失败：${error.message}`;
+    els.runtimeStatus.textContent = t("runtimeFailed", { message: error.message });
   }
 
   api.onProgress(handleProgress);
@@ -88,6 +356,99 @@ async function boot() {
   api.onLog(() => {});
   updateAll();
   hideSplash();
+}
+
+function t(key, values = {}) {
+  const table = I18N[state.language] || I18N.zh;
+  const parts = key.split(".");
+  const value =
+    parts.reduce((current, part) => (current ? current[part] : null), table) ??
+    parts.reduce((current, part) => (current ? current[part] : null), I18N.zh) ??
+    key;
+  return String(value).replace(/\{(\w+)\}/g, (_match, name) => values[name] ?? "");
+}
+
+function applyLanguage() {
+  document.documentElement.lang = state.language === "en" ? "en" : "zh-CN";
+  document.title = t("appName");
+  document.querySelector("h1").textContent = t("appName");
+  document.querySelector(".splash-stack strong").textContent = t("appName");
+  document.querySelector(".drop-zone strong").textContent = t("dropTitle");
+  document.querySelector(".drop-zone small").textContent = t("dropSubtitle");
+
+  els.authorLink.textContent = t("author", {
+    version: state.environment?.version || "0.1.5",
+    date: state.environment?.buildDate || "2026-05-27"
+  });
+  els.pickVideosButton.textContent = t("addVideos");
+  els.pickFoldersButton.textContent = t("addFolders");
+  els.clearListButton.textContent = t("clear");
+  els.settingsButtonLabel.textContent = t("settingsButton");
+  els.settingsDrawerTitle.textContent = t("settingsTitle");
+  els.settingsDrawerSubtitle.textContent = t("settingsSubtitle");
+  els.closeSettingsButton.setAttribute("aria-label", t("closeSettings"));
+  document.querySelector(".section-title h2").textContent = t("queueTitle");
+  labelFor("codecSelect", t("outputCodec"));
+  labelFor("outputFormatSelect", t("outputFormat"));
+  document.querySelector(".settings-card h2").textContent = t("queueSettings");
+  labelFor("concurrencyInput", t("concurrencyLimit"));
+  document.querySelector(".number-row span").textContent = t("tasksUnit");
+  document.querySelector(".setting-note").textContent = t("concurrencyNote");
+  els.advancedSettingsTitle.textContent = t("advancedSettings");
+  els.hardwareAccelerationLabel.textContent = t("hardwareEnabled");
+  labelFor("hardwareMode", t("hardwareMode"));
+  labelFor("languageSelect", t("language"));
+  els.modePreset.textContent = t("presetMode");
+  els.modeCustom.textContent = t("customBitrate");
+  document.querySelector("#presetPanel .field-label").textContent = t("qualityPreset");
+  presetLabel("compact", t("compact"));
+  presetLabel("balanced", t("balanced"));
+  presetLabel("high", t("high"));
+  presetLabel("master", t("master"));
+  labelFor("bitrateSlider", t("bitrate"));
+  els.applyRecommendedButton.textContent = t("applyRecommended");
+  els.bitrateProtectionLabel.textContent = t("conservativeMode");
+  labelFor("encoderPreset", t("encoderSpeed"));
+  labelFor("audioMode", t("audio"));
+  els.outputDirLabel.textContent = t("outputFolder");
+  els.chooseOutputButton.textContent = t("choose");
+  els.startButton.textContent = t("startQueue");
+  els.cancelButton.textContent = t("stopQueue");
+  els.revealButton.textContent = t("reveal");
+  document.querySelector(".results-band h2").textContent = t("outputNotes");
+  els.languageSelect.value = state.language;
+
+  setSelectLabels();
+  if (state.environment) updateRuntimeStatus();
+  updateAll();
+}
+
+function labelFor(id, text) {
+  const label = document.querySelector(`label[for="${id}"]`);
+  if (label) label.textContent = text;
+}
+
+function presetLabel(preset, text) {
+  const button = document.querySelector(`[data-preset="${preset}"] strong`);
+  if (button) button.textContent = text;
+}
+
+function setSelectLabels() {
+  setOptionLabel(els.outputFormatSelect, "mp4", t("outputMp4"));
+  setOptionLabel(els.hardwareMode, "auto", t("hardwareAuto"));
+  setOptionLabel(els.hardwareMode, "software", t("hardwareSoftware"));
+  setOptionLabel(els.encoderPreset, "slow", t("speedSlow"));
+  setOptionLabel(els.encoderPreset, "medium", t("speedMedium"));
+  setOptionLabel(els.encoderPreset, "fast", t("speedFast"));
+  setOptionLabel(els.encoderPreset, "veryfast", t("speedVeryFast"));
+  setOptionLabel(els.audioMode, "auto", t("audioAuto"));
+  setOptionLabel(els.audioMode, "copy", t("audioCopy"));
+  setOptionLabel(els.audioMode, "aac", t("audioAac"));
+}
+
+function setOptionLabel(select, value, text) {
+  const option = [...select.options].find((item) => item.value === value);
+  if (option) option.textContent = text;
 }
 
 function hideSplash() {
@@ -133,6 +494,13 @@ function bindUi() {
     updateAll();
   });
 
+  els.openSettingsButton.addEventListener("click", openSettings);
+  els.settingsBackdrop.addEventListener("click", closeSettings);
+  els.closeSettingsButton.addEventListener("click", closeSettings);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !els.settingsOverlay.hidden) closeSettings();
+  });
+
   els.concurrencyInput.addEventListener("input", () => {
     state.maxConcurrent = clamp(Number(els.concurrencyInput.value || 2), 1, 4);
     els.concurrencyInput.value = String(state.maxConcurrent);
@@ -172,6 +540,29 @@ function bindUi() {
 
   els.bitrateProtection.addEventListener("change", updateAll);
   els.audioMode.addEventListener("change", updateAll);
+  els.hardwareAcceleration.addEventListener("change", () => {
+    state.hardwareAcceleration = els.hardwareAcceleration.checked;
+    updateAll();
+  });
+  els.hardwareMode.addEventListener("change", () => {
+    state.hardwareMode = els.hardwareMode.value;
+    if (state.hardwareMode === "software") {
+      state.hardwareAcceleration = false;
+      els.hardwareAcceleration.checked = false;
+    } else if (!state.hardwareAcceleration) {
+      state.hardwareAcceleration = true;
+      els.hardwareAcceleration.checked = true;
+    }
+    updateAll();
+  });
+  els.languageSelect.addEventListener("change", () => {
+    state.language = els.languageSelect.value;
+    localStorage.setItem("mashang-language", state.language);
+    applyLanguage();
+  });
+  els.authorLink.addEventListener("click", () => {
+    if (state.environment?.authorUrl) api.openExternal(state.environment.authorUrl);
+  });
 
   els.chooseOutputButton.addEventListener("click", async () => {
     if (!api) return;
@@ -184,10 +575,21 @@ function bindUi() {
   });
 
   els.startButton.addEventListener("click", startQueue);
+  els.pauseButton.addEventListener("click", togglePauseQueue);
   els.cancelButton.addEventListener("click", stopQueue);
   els.revealButton.addEventListener("click", () => {
     if (state.lastOutputPath) api.revealFile(state.lastOutputPath);
   });
+}
+
+function openSettings() {
+  els.settingsOverlay.hidden = false;
+  els.closeSettingsButton.focus({ preventScroll: true });
+}
+
+function closeSettings() {
+  els.settingsOverlay.hidden = true;
+  els.openSettingsButton.focus({ preventScroll: true });
 }
 
 async function pickVideos() {
@@ -201,7 +603,7 @@ async function pickFolders() {
 }
 
 function clearList() {
-  const running = state.files.filter((file) => file.status === "running" || file.status === "starting");
+  const running = state.files.filter((file) => file.status === "running" || file.status === "starting" || file.status === "paused");
   state.files = running;
   state.selectedId = running[0] ? running[0].id : null;
   if (!running.length) state.queueRunning = false;
@@ -288,21 +690,25 @@ function updateAll(options = {}) {
 }
 
 function updateRuntimeStatus() {
+  if (!state.environment) {
+    els.runtimeStatus.textContent = t("checkingRuntime");
+    return;
+  }
   const capabilities = state.environment.capabilities;
   const ffmpegReady = capabilities.ffmpeg.available;
   const ffprobeReady = capabilities.ffprobe.available;
   if (ffmpegReady && ffprobeReady) {
     const version = capabilities.ffmpeg.version.replace(/^ffmpeg version\s+/i, "ffmpeg ");
-    els.runtimeStatus.textContent = `${version}，离线队列转码就绪`;
+    els.runtimeStatus.textContent = t("runtimeReady", { version });
     return;
   }
-  els.runtimeStatus.textContent = "缺少 ffmpeg 或 ffprobe。";
+  els.runtimeStatus.textContent = t("runtimeMissing");
 }
 
 function renderFileList() {
   if (!state.files.length) {
     els.fileList.className = "file-list empty";
-    els.fileList.innerHTML = "<p>还没有选择视频。</p>";
+    els.fileList.innerHTML = `<p>${escapeHtml(t("noVideos"))}</p>`;
     return;
   }
 
@@ -328,7 +734,7 @@ function renderFileList() {
     const selectButton = document.createElement("button");
     selectButton.type = "button";
     selectButton.className = `select-button${file.id === state.selectedId ? " active" : ""}`;
-    selectButton.textContent = file.id === state.selectedId ? "已选" : "选择";
+    selectButton.textContent = file.id === state.selectedId ? t("selected") : t("select");
     selectButton.addEventListener("click", () => {
       state.selectedId = file.id;
       applyPresetOrRecommendation();
@@ -338,7 +744,7 @@ function renderFileList() {
     const revealButton = document.createElement("button");
     revealButton.type = "button";
     revealButton.className = "select-button";
-    revealButton.textContent = "显示";
+    revealButton.textContent = t("reveal");
     revealButton.disabled = !file.outputPath;
     revealButton.addEventListener("click", () => api.revealFile(file.outputPath));
 
@@ -346,7 +752,7 @@ function renderFileList() {
     removeButton.type = "button";
     removeButton.className = "remove-button";
     removeButton.textContent = "×";
-    removeButton.disabled = file.status === "running" || file.status === "starting";
+    removeButton.disabled = file.status === "running" || file.status === "starting" || file.status === "paused";
     removeButton.addEventListener("click", () => {
       state.files = state.files.filter((item) => item.id !== file.id);
       if (state.selectedId === file.id) state.selectedId = state.files[0] ? state.files[0].id : null;
@@ -362,7 +768,7 @@ function renderFileList() {
     chips.className = "chip-row";
 
     if (file.loading) {
-      chips.append(chip("读取中"));
+      chips.append(chip(statusText("loading")));
     } else if (file.error && file.status !== "done") {
       chips.append(chip(statusText(file.status)), chip(file.error));
     } else {
@@ -372,15 +778,22 @@ function renderFileList() {
         chip(`${formatFps(file.video.fps)} fps`),
         chip(`${file.video.bitDepth}-bit`),
         chip(file.video.pixFmt),
-        chip(`源文件 ${formatMB(file.size)}`),
-        chip(`预计输出 ${formatMB(estimateOutputSize(file))}`),
+        chip(t("sourceFile", { size: formatMB(file.size) })),
+        chip(t("estimatedOutput", { size: formatMB(estimateOutputSize(file)) })),
         chip(formatCodecName(file.video.codec))
       );
+      if (file.status === "running" || file.status === "paused") {
+        chips.append(chip(t("currentEta", { eta: formatDuration(file.etaSeconds) })));
+      }
+      if (file.encoderLabel) {
+        chips.append(chip(file.hardwareAccelerated ? t("hardware", { encoder: file.encoderLabel }) : t("software")));
+      }
+      if (file.fallbackAttempted) chips.append(chip(t("fallbackSoftware")));
     }
 
     card.append(chips);
 
-    if (file.status === "running" || file.status === "starting") {
+    if (file.status === "running" || file.status === "starting" || file.status === "paused") {
       const progress = document.createElement("div");
       progress.className = "mini-progress";
       progress.innerHTML = `<span style="width:${clamp(file.progress || 0, 0, 100)}%"></span>`;
@@ -400,11 +813,11 @@ function renderFileList() {
 
 function renderResults() {
   const completed = state.files.filter((file) => file.status === "done" && file.result);
-  els.resultsHint.textContent = completed.length ? batchSummary(completed) : "完成后会在这里列出格式、路径、色深、分辨率和体积变化。";
+  els.resultsHint.textContent = completed.length ? batchSummary(completed) : t("resultsHint");
 
   if (!completed.length) {
     els.resultsList.className = "results-list empty";
-    els.resultsList.innerHTML = "<p>暂无输出。</p>";
+    els.resultsList.innerHTML = `<p>${escapeHtml(t("noResults"))}</p>`;
     return;
   }
 
@@ -424,7 +837,7 @@ function renderResults() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "ghost-button";
-    button.textContent = "显示";
+    button.textContent = t("reveal");
     button.addEventListener("click", () => api.revealFile(file.outputPath));
     item.append(button);
     els.resultsList.append(item);
@@ -439,7 +852,7 @@ function updateRecommendations() {
   els.presetBalanced.textContent = rec ? `${rec.balanced} Mbps` : "-";
   els.presetHigh.textContent = rec ? `${rec.high} Mbps` : "-";
   els.presetMaster.textContent = rec ? `${rec.master} Mbps` : "-";
-  els.recommendedText.textContent = rec ? `推荐码率：${rec.balanced} Mbps` : "推荐码率：-";
+  els.recommendedText.textContent = t("recommended", { value: rec ? `${rec.balanced} Mbps` : "-" });
 
   for (const button of els.presetButtons) {
     button.classList.toggle("active", button.dataset.preset === state.preset);
@@ -461,31 +874,44 @@ function updateEstimateAnnotations() {
 function updateGuard() {
   const file = selectedFile();
   if (!file || file.loading) {
-    setGuard("等待视频", "选择视频后会显示源位深、分辨率、原始大小和预计输出大小。", false);
-    els.bitDepthGuard.textContent = "位深保护待命";
+    setGuard(t("waitingVideo"), t("waitingVideoDescription"), false);
+    els.bitDepthGuard.textContent = t("bitDepthStandby");
     return;
   }
 
   if (file.error) {
-    setGuard("无法读取视频", file.error, true);
-    els.bitDepthGuard.textContent = "等待可用视频";
+    setGuard(t("unreadableVideo"), file.error, true);
+    els.bitDepthGuard.textContent = t("waitUsableVideo");
     return;
   }
 
   const support = getBitDepthSupport(file);
   const source = `${file.video.bitDepth}-bit ${file.video.pixFmt} · ${file.video.width}×${file.video.height}`;
   if (!support.ok) {
-    setGuard("当前编码不可保持位深", support.message, true);
-    els.bitDepthGuard.textContent = "位深保护拦截";
+    setGuard(t("bitDepthBlocked"), support.message, true);
+    els.bitDepthGuard.textContent = t("bitDepthGuardBlocked");
     return;
   }
 
   const targetBitrate = bitrateForFile(file);
-  const estimateCopy = `，目标 ${roundToTenth(targetBitrate)} Mbps，预计输出约 ${formatMB(estimateOutputSize(file))}`;
-  const shrinkCopy = els.bitrateProtection.checked ? "保守模式会抬高到源视频码率" : "会按所选码率重新编码瘦身";
   const audioCopy = audioModeDescription(file);
-  setGuard("输出保护开启", `源视频 ${source}，输出为 ${formatOutputChoice()}，使用 ${support.pixelFormat}${estimateCopy}，音频${audioCopy}，${shrinkCopy}，完成后会再次验证。`, false);
-  els.bitDepthGuard.textContent = `保持 ${file.video.bitDepth}-bit / ${file.video.width}×${file.video.height}`;
+  setGuard(
+    t("outputProtection"),
+    t("guardReady", {
+      source,
+      choice: formatOutputChoice(),
+      pixFmt: support.pixelFormat,
+      bitrate: roundToTenth(targetBitrate),
+      size: formatMB(estimateOutputSize(file)),
+      audio: audioCopy,
+      shrink: els.bitrateProtection.checked ? t("shrinkConservative") : t("shrinkNormal")
+    }),
+    false
+  );
+  els.bitDepthGuard.textContent = t("keepBitDepth", {
+    depth: file.video.bitDepth,
+    resolution: `${file.video.width}×${file.video.height}`
+  });
 }
 
 function setGuard(title, description, warning) {
@@ -495,9 +921,9 @@ function setGuard(title, description, warning) {
 }
 
 function getBitDepthSupport(file) {
-  if (!state.environment || !file || !file.video) return { ok: false, message: "环境还没有准备好。" };
+  if (!state.environment || !file || !file.video) return { ok: false, message: t("envNotReady") };
   const codecCaps = state.environment.capabilities.encoders[state.codec];
-  if (!codecCaps) return { ok: false, message: "未找到编码器能力。" };
+  if (!codecCaps) return { ok: false, message: t("encoderCapsMissing") };
 
   const pixelFormat = normalizePixelFormat(file.video.pixFmt, file.video.bitDepth);
   if (codecCaps.pixelFormats.includes(pixelFormat)) {
@@ -509,7 +935,11 @@ function getBitDepthSupport(file) {
 
   return {
     ok: false,
-    message: `${codecCaps.encoder} 不支持 ${file.video.bitDepth}-bit 的 ${file.video.pixFmt} 输出。`
+    message: t("unsupportedBitDepth", {
+      encoder: codecCaps.encoder,
+      depth: file.video.bitDepth,
+      pixFmt: file.video.pixFmt
+    })
   };
 }
 
@@ -525,32 +955,53 @@ function normalizePixelFormat(sourcePixFmt, bitDepth) {
 
 function updateQueueStatus() {
   const counts = countStatuses();
-  els.queueStatus.textContent = `${counts.ready + counts.queued} 待处理 · ${counts.running + counts.starting} 运行 · ${counts.done} 完成`;
+  els.queueStatus.textContent = t("queueStatus", {
+    pending: counts.ready + counts.queued,
+    running: counts.running + counts.starting,
+    paused: counts.paused,
+    done: counts.done
+  });
+  els.hardwareStatus.textContent = state.hardwareAcceleration ? t("hardwareStatusAuto") : t("hardwareStatusOff");
 
   const processable = state.files.filter((file) => !file.loading && file.status !== "error");
   const total = processable.length;
   if (!total) {
-    els.progressTitle.textContent = "待开始";
-    els.progressMeta.textContent = "添加视频或文件夹后开始。";
+    els.progressTitle.textContent = t("pending");
+    els.progressMeta.textContent = t("addToStart");
     els.progressBar.style.width = "0%";
     return;
   }
 
   const finishedWeight = processable.reduce((sum, file) => {
     if (file.status === "done") return sum + 100;
-    if (file.status === "running" || file.status === "starting") return sum + (file.progress || 0);
+    if (file.status === "running" || file.status === "starting" || file.status === "paused") return sum + (file.progress || 0);
     return sum;
   }, 0);
   const percent = finishedWeight / total;
   els.progressBar.style.width = `${clamp(percent, 0, 100)}%`;
 
-  if (state.queueRunning || counts.running || counts.starting || counts.queued) {
-    els.progressTitle.textContent = `队列处理中 ${Math.round(percent)}%`;
-    els.progressMeta.textContent = `并发上限 ${state.maxConcurrent} · ${counts.running + counts.starting} 运行 · ${counts.queued} 排队`;
+  if (state.queuePaused) {
+    els.progressTitle.textContent = t("queuePausedTitle", { percent: Math.round(percent) });
+    els.progressMeta.textContent = t("queueRunningMeta", {
+      limit: state.maxConcurrent,
+      running: counts.running + counts.starting,
+      queued: counts.queued,
+      currentEta: currentTaskEtaText(),
+      queueEta: formatDuration(estimateQueueEtaSeconds())
+    });
+  } else if (state.queueRunning || counts.running || counts.starting || counts.queued || counts.paused) {
+    els.progressTitle.textContent = t("queueRunningTitle", { percent: Math.round(percent) });
+    els.progressMeta.textContent = t("queueRunningMeta", {
+      limit: state.maxConcurrent,
+      running: counts.running + counts.starting,
+      queued: counts.queued,
+      currentEta: currentTaskEtaText(),
+      queueEta: formatDuration(estimateQueueEtaSeconds())
+    });
   } else if (counts.done) {
     const completed = state.files.filter((file) => file.status === "done" && file.result);
-    els.progressTitle.textContent = "队列完成";
-    els.progressMeta.textContent = completed.length ? batchSummary(completed) : `完成 ${counts.done} 个输出`;
+    els.progressTitle.textContent = t("queueDone");
+    els.progressMeta.textContent = completed.length ? batchSummary(completed) : t("completedOutputs", { count: counts.done });
   }
 }
 
@@ -562,13 +1013,18 @@ function updateControls() {
     state.environment.capabilities.ffprobe.available;
   const counts = countStatuses();
   const canStart = counts.ready > 0 || counts.queued > 0;
+  const hasActiveQueue = state.queueRunning || counts.running || counts.queued || counts.starting || counts.paused;
 
-  els.startButton.disabled = !envReady || !canStart || state.queueRunning;
-  els.cancelButton.disabled = !(state.queueRunning || counts.running || counts.queued || counts.starting);
+  els.startButton.disabled = !envReady || !canStart || state.queueRunning || state.queuePaused;
+  els.pauseButton.disabled = !hasActiveQueue;
+  els.pauseButton.textContent = state.queuePaused ? t("resumeQueue") : t("pauseQueue");
+  els.cancelButton.disabled = !hasActiveQueue;
   els.revealButton.disabled = !state.lastOutputPath;
   els.codecSelect.value = state.codec;
   els.outputFormatSelect.value = state.outputFormat;
   els.concurrencyInput.value = String(state.maxConcurrent);
+  els.hardwareAcceleration.checked = state.hardwareAcceleration;
+  els.hardwareMode.value = state.hardwareAcceleration ? state.hardwareMode : "software";
   setQualityMode(state.qualityMode);
 }
 
@@ -582,23 +1038,27 @@ function startQueue() {
     file.result = null;
   }
   state.queueRunning = true;
+  state.queuePaused = false;
+  state.batchStartedAt = Date.now();
+  state.batchCompletedAt = 0;
   updateAll();
   pumpQueue();
 }
 
 async function pumpQueue() {
-  if (!state.queueRunning || state.pumping) return;
+  if (!state.queueRunning || state.queuePaused || state.pumping) return;
   state.pumping = true;
 
   try {
-    while (state.queueRunning && countStatuses().running + countStatuses().starting < state.maxConcurrent) {
+    while (!state.queuePaused && state.queueRunning && countStatuses().running + countStatuses().starting < state.maxConcurrent) {
       const next = state.files.find((file) => file.status === "queued");
       if (!next) break;
       await startFile(next);
     }
 
-    if (!state.files.some((file) => file.status === "queued" || file.status === "running" || file.status === "starting")) {
+    if (!state.files.some((file) => file.status === "queued" || file.status === "running" || file.status === "starting" || file.status === "paused")) {
       state.queueRunning = false;
+      state.batchCompletedAt = Date.now();
     }
   } finally {
     state.pumping = false;
@@ -618,6 +1078,9 @@ async function startFile(file) {
   file.progress = 0;
   file.outputPath = "";
   file.result = null;
+  file.startedAt = Date.now();
+  file.elapsedMs = 0;
+  file.etaSeconds = null;
   updateAll();
 
   try {
@@ -631,7 +1094,12 @@ async function startFile(file) {
         bitrateProtection: els.bitrateProtection.checked,
         outputDir: state.outputDir,
         encoderPreset: els.encoderPreset.value,
-        audioMode: els.audioMode.value
+        audioMode: els.audioMode.value,
+        hardware: {
+          enabled: state.hardwareAcceleration,
+          mode: state.hardwareMode,
+          allowFallback: true
+        }
       }
     });
 
@@ -640,16 +1108,50 @@ async function startFile(file) {
     file.outputPath = result.outputPath;
     file.targetPixFmt = result.pixelFormat;
     file.effectiveBitrateMbps = result.effectiveBitrateMbps;
+    file.hardwareAccelerated = result.hardwareAccelerated;
+    file.encoderLabel = result.encoderLabel;
+    file.encoderUsed = result.encoderUsed;
   } catch (error) {
     file.status = "error";
     file.error = error.message;
   }
 }
 
+async function togglePauseQueue() {
+  if (state.queuePaused) {
+    state.queuePaused = false;
+    for (const file of state.files) {
+      if (file.status === "paused" && file.jobId) {
+        const result = await api.resumeTranscode(file.jobId);
+        if (result.ok) file.status = "running";
+        else file.error = result.error || file.error;
+      }
+    }
+    updateAll();
+    pumpQueue();
+    return;
+  }
+
+  state.queuePaused = true;
+  for (const file of state.files) {
+    if ((file.status === "running" || file.status === "starting") && file.jobId) {
+      const result = await api.pauseTranscode(file.jobId);
+      if (result.ok) file.status = "paused";
+      else file.error = result.error || file.error;
+    }
+  }
+  updateAll();
+}
+
 async function stopQueue() {
   state.queueRunning = false;
+  state.queuePaused = false;
   for (const file of state.files) {
     if (file.status === "queued") file.status = "ready";
+    if (file.status === "paused" && file.jobId) {
+      await api.resumeTranscode(file.jobId);
+      file.status = "running";
+    }
     if ((file.status === "running" || file.status === "starting") && file.jobId) {
       file.status = "cancelling";
       await api.cancelTranscode(file.jobId);
@@ -661,8 +1163,21 @@ async function stopQueue() {
 function handleProgress(payload) {
   const file = fileFromPayload(payload);
   if (!file) return;
+  if (payload.hardwareFallback) {
+    file.fallbackAttempted = true;
+    file.hardwareAccelerated = false;
+    file.encoderLabel = payload.encoderLabel;
+    file.encoderUsed = payload.encoderUsed;
+    file.progress = 0;
+  }
   file.progress = clamp(payload.percent || 0, 0, 100);
   file.speed = payload.speed || "";
+  file.speedValue = parseSpeedValue(payload.speed);
+  file.currentSeconds = payload.currentSeconds || file.currentSeconds || 0;
+  file.etaSeconds = estimateFileEta(file);
+  file.hardwareAccelerated = Boolean(payload.hardwareAccelerated);
+  file.encoderLabel = payload.encoderLabel || file.encoderLabel;
+  file.encoderUsed = payload.encoderUsed || file.encoderUsed;
   updateQueueStatus();
   renderFileList();
 }
@@ -676,11 +1191,16 @@ function handleComplete(payload) {
     file.progress = 100;
     file.outputPath = payload.outputPath;
     file.result = payload.verification;
+    file.elapsedMs = payload.elapsedMs || file.elapsedMs || 0;
+    file.hardwareAccelerated = Boolean(payload.verification?.hardwareAccelerated);
+    file.encoderLabel = payload.verification?.encoderLabel || file.encoderLabel;
+    file.encoderUsed = payload.verification?.encoderUsed || file.encoderUsed;
+    file.fallbackAttempted = Boolean(payload.verification?.fallbackAttempted);
     file.error = "";
     state.lastOutputPath = payload.outputPath;
   } else {
     file.status = payload.cancelled ? "cancelled" : "error";
-    file.error = payload.error || "转码没有完成。";
+    file.error = payload.error || t("incomplete");
   }
 
   updateAll();
@@ -702,6 +1222,60 @@ function bitrateForFile(file) {
   return state.bitrateMbps;
 }
 
+function parseSpeedValue(speed) {
+  const match = String(speed || "").match(/([\d.]+)x/);
+  return match ? Number(match[1]) : 0;
+}
+
+function estimateFileEta(file) {
+  if (!file || !file.duration) return null;
+  const speed = file.speedValue || averageObservedSpeed() || 0;
+  if (speed > 0 && file.currentSeconds >= 0) {
+    return Math.max((file.duration - file.currentSeconds) / speed, 0);
+  }
+
+  if (file.startedAt && file.progress > 1) {
+    const elapsedSeconds = (Date.now() - file.startedAt) / 1000;
+    return Math.max((elapsedSeconds / file.progress) * (100 - file.progress), 0);
+  }
+
+  return null;
+}
+
+function averageObservedSpeed() {
+  const running = state.files.map((file) => file.speedValue).filter((value) => value > 0);
+  if (running.length) return running.reduce((sum, value) => sum + value, 0) / running.length;
+
+  const completed = state.files
+    .filter((file) => file.status === "done" && file.elapsedMs && file.duration)
+    .map((file) => file.duration / (file.elapsedMs / 1000))
+    .filter((value) => value > 0);
+  if (completed.length) return completed.reduce((sum, value) => sum + value, 0) / completed.length;
+
+  return state.hardwareAcceleration ? 1 : 0.55;
+}
+
+function currentTaskEtaText() {
+  const running = state.files.find((file) => file.status === "running" || file.status === "paused" || file.status === "starting");
+  return formatDuration(running?.etaSeconds);
+}
+
+function estimateQueueEtaSeconds() {
+  const active = state.files.filter((file) => ["queued", "ready", "running", "starting", "paused"].includes(file.status));
+  if (!active.length) return null;
+
+  const speed = averageObservedSpeed();
+  const runningEta = active
+    .filter((file) => file.status === "running" || file.status === "starting" || file.status === "paused")
+    .reduce((sum, file) => sum + (estimateFileEta(file) || 0), 0);
+  const queuedWork = active
+    .filter((file) => file.status === "queued" || file.status === "ready")
+    .reduce((sum, file) => sum + Number(file.duration || 0), 0);
+  const lanes = Math.max(1, Math.min(state.maxConcurrent, active.length));
+
+  return runningEta + queuedWork / Math.max(speed * lanes, 0.1);
+}
+
 function outputSummary(file) {
   const result = file.result || {};
   const codec = formatCodecName(result.outputCodec || state.codec);
@@ -710,8 +1284,27 @@ function outputSummary(file) {
   const saved = Math.max(sourceSize - outputSize, 0);
   const savedPercent = sourceSize ? Math.round((saved / sourceSize) * 100) : 0;
   const format = result.outputFormat || formatOutputLabel(state.outputFormat);
-  const target = result.targetBitrateMbps ? ` · 目标 ${roundToTenth(result.targetBitrateMbps)} Mbps` : "";
-  return `格式 ${format} (${codec})${target} · 路径已生成 · 色深 ${result.inputBitDepth}-bit → ${result.outputBitDepth}-bit · 分辨率 ${result.outputResolution} · 原始 ${formatMB(sourceSize)} / 输出 ${formatMB(outputSize)} / 减少 ${formatMB(saved)}（${savedPercent}%）`;
+  const target = result.targetBitrateMbps ? t("target", { bitrate: roundToTenth(result.targetBitrateMbps) }) : "";
+  const engine = result.hardwareAccelerated
+    ? t("hardware", { encoder: result.encoderLabel || result.encoderUsed || "GPU" })
+    : result.fallbackAttempted
+      ? t("fallbackSoftware")
+      : t("software");
+  const elapsed = file.elapsedMs ? ` · ${t("elapsed", { time: formatDuration(file.elapsedMs / 1000) })}` : "";
+  return t("outputSummary", {
+    format,
+    codec,
+    target,
+    inputDepth: result.inputBitDepth,
+    outputDepth: result.outputBitDepth,
+    resolution: result.outputResolution,
+    engine,
+    sourceSize: formatMB(sourceSize),
+    outputSize: formatMB(outputSize),
+    saved: formatMB(saved),
+    savedPercent,
+    elapsed
+  });
 }
 
 function batchSummary(files) {
@@ -719,7 +1312,18 @@ function batchSummary(files) {
   const outputTotal = files.reduce((sum, file) => sum + Number(file.result?.outputSize || 0), 0);
   const saved = Math.max(sourceTotal - outputTotal, 0);
   const savedPercent = sourceTotal ? Math.round((saved / sourceTotal) * 100) : 0;
-  return `本批 ${files.length} 个：原始 ${formatMB(sourceTotal)} · 输出 ${formatMB(outputTotal)} · 共减少 ${formatMB(saved)}（${savedPercent}%）`;
+  const elapsedMs =
+    state.batchStartedAt && state.batchCompletedAt
+      ? state.batchCompletedAt - state.batchStartedAt
+      : files.reduce((sum, file) => sum + Number(file.elapsedMs || 0), 0);
+  return t("batchSummary", {
+    count: files.length,
+    source: formatMB(sourceTotal),
+    output: formatMB(outputTotal),
+    saved: formatMB(saved),
+    percent: savedPercent,
+    elapsed: formatDuration(elapsedMs / 1000)
+  });
 }
 
 function countStatuses() {
@@ -728,23 +1332,12 @@ function countStatuses() {
       counts[file.status] = (counts[file.status] || 0) + 1;
       return counts;
     },
-    { loading: 0, ready: 0, queued: 0, starting: 0, running: 0, done: 0, error: 0, cancelled: 0, cancelling: 0 }
+    { loading: 0, ready: 0, queued: 0, starting: 0, running: 0, paused: 0, done: 0, error: 0, cancelled: 0, cancelling: 0 }
   );
 }
 
 function statusText(status) {
-  const labels = {
-    loading: "读取中",
-    ready: "待处理",
-    queued: "排队中",
-    starting: "启动中",
-    running: "转码中",
-    cancelling: "取消中",
-    done: "已完成",
-    error: "失败",
-    cancelled: "已取消"
-  };
-  return labels[status] || "待处理";
+  return t(`status.${status}`) || t("status.ready");
 }
 
 function chip(text) {
@@ -802,10 +1395,10 @@ function canCopyAudioToContainer(file, outputFormat) {
 }
 
 function audioModeDescription(file) {
-  if (!file?.audio?.count) return "无音轨";
-  if (els.audioMode.value === "aac") return "转 AAC 192k";
-  if (els.audioMode.value === "copy") return "强制保留原轨";
-  return canCopyAudioToContainer(file, state.outputFormat) ? "保留原轨" : "自动转 AAC 192k";
+  if (!file?.audio?.count) return t("noAudio");
+  if (els.audioMode.value === "aac") return t("audioAac");
+  if (els.audioMode.value === "copy") return t("audioCopy");
+  return canCopyAudioToContainer(file, state.outputFormat) ? t("audioKeep") : t("audioAutoAac");
 }
 
 function formatMB(bytes) {
@@ -813,6 +1406,25 @@ function formatMB(bytes) {
   if (!Number.isFinite(mb) || mb <= 0) return "-";
   if (mb >= 100) return `${Math.round(mb)} MB`;
   return `${roundToTenth(mb)} MB`;
+}
+
+function formatDuration(seconds) {
+  const value = Number(seconds || 0);
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  const rounded = Math.max(1, Math.round(value));
+  const hours = Math.floor(rounded / 3600);
+  const minutes = Math.floor((rounded % 3600) / 60);
+  const secs = rounded % 60;
+
+  if (state.language === "en") {
+    if (hours) return `${hours}h ${minutes}m`;
+    if (minutes) return `${minutes}m ${secs}s`;
+    return `${secs}s`;
+  }
+
+  if (hours) return `${hours}小时${minutes}分`;
+  if (minutes) return `${minutes}分${secs}秒`;
+  return `${secs}秒`;
 }
 
 function formatCodecName(codec) {

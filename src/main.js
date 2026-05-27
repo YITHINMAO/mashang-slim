@@ -3,9 +3,12 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const { spawn, spawnSync } = require("node:child_process");
+const { version: APP_VERSION } = require("../package.json");
 
 const jobs = new Map();
 const APP_NAME = "码上瘦身";
+const BUILD_DATE = "2026-05-27";
+const AUTHOR_URL = "https://github.com/YITHINMAO";
 const TOOL_NAMES = {
   ffmpeg: process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg",
   ffprobe: process.platform === "win32" ? "ffprobe.exe" : "ffprobe"
@@ -93,19 +96,33 @@ function getEncoderPixelFormats(encoder) {
   return match[1].trim().split(/\s+/).filter(Boolean);
 }
 
+function getAvailableEncoderNames() {
+  const result = runSync("ffmpeg", ["-hide_banner", "-encoders"]);
+  if (!result.ok) return [];
+  return [...result.stdout.matchAll(/^\s*[A-Z.]{6}\s+([a-zA-Z0-9_]+)\s+/gm)].map((match) => match[1]);
+}
+
 function loadCapabilities() {
   const ffmpeg = getToolVersion("ffmpeg");
   const ffprobe = getToolVersion("ffprobe");
+  const availableEncoderNames = getAvailableEncoderNames();
+  const availableEncoderSet = new Set(availableEncoderNames);
   const encoders = {};
 
   for (const [codec, config] of Object.entries(ENCODERS)) {
     encoders[codec] = {
       encoder: config.encoder,
-      pixelFormats: getEncoderPixelFormats(config.encoder)
+      pixelFormats: getEncoderPixelFormats(config.encoder),
+      hardware: hardwareCandidatesForCodec(codec)
+        .filter((candidate) => availableEncoderSet.has(candidate.encoder))
+        .map((candidate) => ({
+          ...candidate,
+          pixelFormats: getEncoderPixelFormats(candidate.encoder)
+        }))
     };
   }
 
-  return { ffmpeg, ffprobe, encoders };
+  return { ffmpeg, ffprobe, encoders, availableEncoderNames };
 }
 
 function expandInputPaths(inputPaths) {
@@ -174,6 +191,9 @@ app.whenReady().then(() => {
     return {
       platform: process.platform,
       home: os.homedir(),
+      version: APP_VERSION,
+      buildDate: BUILD_DATE,
+      authorUrl: AUTHOR_URL,
       defaultOutputDir: app.getPath("videos"),
       capabilities: loadCapabilities()
     };
@@ -220,8 +240,29 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
+  ipcMain.handle("transcode:pause", async (_event, jobId) => {
+    const job = jobs.get(jobId);
+    if (!job) return { ok: false, error: "没有正在运行的任务。" };
+    const result = pauseProcess(job);
+    if (result.ok) job.paused = true;
+    return result;
+  });
+
+  ipcMain.handle("transcode:resume", async (_event, jobId) => {
+    const job = jobs.get(jobId);
+    if (!job) return { ok: false, error: "没有正在运行的任务。" };
+    const result = resumeProcess(job);
+    if (result.ok) job.paused = false;
+    return result;
+  });
+
   ipcMain.handle("file:reveal", async (_event, filePath) => {
     if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath);
+    return true;
+  });
+
+  ipcMain.handle("link:openExternal", async (_event, url) => {
+    if (url) await shell.openExternal(url);
     return true;
   });
 
@@ -434,6 +475,60 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+function hardwareCandidatesForCodec(codec) {
+  if (process.platform === "darwin") {
+    return codec === "h265"
+      ? [{ encoder: "hevc_videotoolbox", label: "Apple VideoToolbox", vendor: "apple" }]
+      : [{ encoder: "h264_videotoolbox", label: "Apple VideoToolbox", vendor: "apple" }];
+  }
+
+  if (process.platform === "win32") {
+    return codec === "h265"
+      ? [
+          { encoder: "hevc_nvenc", label: "NVIDIA NVENC", vendor: "nvidia" },
+          { encoder: "hevc_qsv", label: "Intel Quick Sync", vendor: "intel" },
+          { encoder: "hevc_amf", label: "AMD AMF", vendor: "amd" }
+        ]
+      : [
+          { encoder: "h264_nvenc", label: "NVIDIA NVENC", vendor: "nvidia" },
+          { encoder: "h264_qsv", label: "Intel Quick Sync", vendor: "intel" },
+          { encoder: "h264_amf", label: "AMD AMF", vendor: "amd" }
+        ];
+  }
+
+  return [];
+}
+
+function selectHardwareCandidate(codec, capabilities, hardware = {}) {
+  if (!hardware.enabled) return null;
+
+  const available = capabilities.encoders[codec]?.hardware || [];
+  if (!available.length) return null;
+
+  const mode = hardware.mode || "auto";
+  if (mode === "software") return null;
+  if (mode === "auto") return available[0] || null;
+
+  return available.find((candidate) => candidate.vendor === mode || candidate.encoder.includes(mode)) || null;
+}
+
+function chooseHardwarePixelFormat(sourcePixFmt, bitDepth, candidate) {
+  const supported = candidate.pixelFormats || [];
+  const source = String(sourcePixFmt || "").toLowerCase();
+
+  if (bitDepth > 8) {
+    if (supported.includes("p010le")) return { ok: true, pixelFormat: "p010le" };
+    if (supported.includes("yuv420p10le")) return { ok: true, pixelFormat: "yuv420p10le" };
+    return { ok: false, error: `${candidate.label} 不支持保持 ${bitDepth}-bit 输出。` };
+  }
+
+  if (supported.includes(source)) return { ok: true, pixelFormat: source };
+  if (supported.includes("nv12")) return { ok: true, pixelFormat: "nv12" };
+  if (supported.includes("yuv420p")) return { ok: true, pixelFormat: "yuv420p" };
+
+  return { ok: false, error: `${candidate.label} 不支持 ${sourcePixFmt} 输出。` };
+}
+
 function startTranscode(webContents, payload) {
   const input = payload.input;
   const options = payload.options;
@@ -441,11 +536,6 @@ function startTranscode(webContents, payload) {
   const encoderConfig = ENCODERS[options.codec];
   if (!encoderConfig) throw new Error("不支持的编码器。");
   if (!input || !input.path) throw new Error("没有输入文件。");
-
-  const targetPixFmt = choosePixelFormat(input.video.pixFmt, input.video.bitDepth, options.codec, capabilities);
-  if (!targetPixFmt.ok) {
-    throw new Error(targetPixFmt.error);
-  }
 
   const outputDir = options.outputDir || input.directory;
   fs.mkdirSync(outputDir, { recursive: true });
@@ -462,41 +552,130 @@ function startTranscode(webContents, payload) {
     ? roundToTenth(Math.max(requestedBitrateMbps, sourceBitrateMbps))
     : requestedBitrateMbps;
 
+  const plan = buildTranscodePlan({
+    input,
+    options,
+    capabilities,
+    outputPath,
+    outputFormat,
+    bitrateMbps: effectiveBitrateMbps,
+    forceSoftware: false
+  });
+
+  const fallbackPlan =
+    plan.hardwareAccelerated && options.hardware?.allowFallback !== false
+      ? buildTranscodePlan({
+          input,
+          options,
+          capabilities,
+          outputPath,
+          outputFormat,
+          bitrateMbps: effectiveBitrateMbps,
+          forceSoftware: true
+        })
+      : null;
+
+  const jobId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const job = {
+    id: jobId,
+    process: null,
+    outputPath,
+    input,
+    options,
+    requestedBitrateMbps,
+    effectiveBitrateMbps,
+    bitrateProtection,
+    plan,
+    fallbackPlan,
+    fallbackAttempted: false,
+    cancelled: false,
+    paused: false,
+    startedAt: Date.now(),
+    stderr: ""
+  };
+  jobs.set(jobId, job);
+  launchJob(webContents, job);
+
+  return {
+    ok: true,
+    jobId,
+    outputPath,
+    pixelFormat: plan.pixelFormat,
+    outputFormat,
+    requestedBitrateMbps,
+    effectiveBitrateMbps,
+    bitrateProtection,
+    hardwareAccelerated: plan.hardwareAccelerated,
+    encoderUsed: plan.encoder,
+    encoderLabel: plan.encoderLabel,
+    argsPreview: [getToolPath("ffmpeg"), ...plan.args]
+  };
+}
+
+function buildTranscodePlan({ input, options, capabilities, outputPath, outputFormat, bitrateMbps, forceSoftware }) {
+  const codec = options.codec;
+  const hardwareCandidate = forceSoftware ? null : selectHardwareCandidate(codec, capabilities, options.hardware || {});
+  let encoder = ENCODERS[codec].encoder;
+  let encoderLabel = ENCODERS[codec].name;
+  let hardwareAccelerated = false;
+  let targetPixFmt = null;
+
+  if (hardwareCandidate) {
+    const hardwarePixFmt = chooseHardwarePixelFormat(input.video.pixFmt, input.video.bitDepth, hardwareCandidate);
+    if (hardwarePixFmt.ok) {
+      encoder = hardwareCandidate.encoder;
+      encoderLabel = hardwareCandidate.label;
+      hardwareAccelerated = true;
+      targetPixFmt = hardwarePixFmt;
+    }
+  }
+
+  if (!targetPixFmt) {
+    targetPixFmt = choosePixelFormat(input.video.pixFmt, input.video.bitDepth, codec, capabilities);
+  }
+
+  if (!targetPixFmt.ok) {
+    throw new Error(targetPixFmt.error);
+  }
+
   const args = buildFfmpegArgs({
     input,
     outputPath,
-    codec: options.codec,
-    bitrateMbps: effectiveBitrateMbps,
+    codec,
+    encoder,
+    hardwareAccelerated,
+    bitrateMbps,
     encoderPreset: options.encoderPreset || "medium",
     audioMode: options.audioMode || "auto",
     pixelFormat: targetPixFmt.pixelFormat,
     outputFormat
   });
 
-  const jobId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const child = spawn(getToolPath("ffmpeg"), args, { windowsHide: true });
-  const job = {
-    id: jobId,
-    process: child,
-    outputPath,
-    input,
-    options,
-    cancelled: false,
-    startedAt: Date.now(),
-    stderr: ""
+  return {
+    args,
+    encoder,
+    encoderLabel,
+    hardwareAccelerated,
+    pixelFormat: targetPixFmt.pixelFormat
   };
-  jobs.set(jobId, job);
+}
 
+function launchJob(webContents, job) {
+  const child = spawn(getToolPath("ffmpeg"), job.plan.args, { windowsHide: true });
+  job.process = child;
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
 
   child.stdout.on("data", (chunk) => {
-    const progress = parseProgress(chunk, input.duration);
+    const progress = parseProgress(chunk, job.input.duration);
     if (progress) {
       webContents.send("transcode:progress", {
-        jobId,
-        taskId: options.taskId || null,
-        outputPath,
+        jobId: job.id,
+        taskId: job.options.taskId || null,
+        outputPath: job.outputPath,
+        hardwareAccelerated: job.plan.hardwareAccelerated,
+        encoderUsed: job.plan.encoder,
+        encoderLabel: job.plan.encoderLabel,
         ...progress
       });
     }
@@ -505,91 +684,107 @@ function startTranscode(webContents, payload) {
   child.stderr.on("data", (chunk) => {
     job.stderr += chunk;
     webContents.send("transcode:log", {
-      jobId,
-      taskId: options.taskId || null,
+      jobId: job.id,
+      taskId: job.options.taskId || null,
       message: chunk
     });
   });
 
   child.on("error", (error) => {
-    jobs.delete(jobId);
+    jobs.delete(job.id);
     webContents.send("transcode:complete", {
-      jobId,
-      taskId: options.taskId || null,
+      jobId: job.id,
+      taskId: job.options.taskId || null,
       ok: false,
-      outputPath,
+      outputPath: job.outputPath,
       error: error.message
     });
   });
 
   child.on("close", (code) => {
-    jobs.delete(jobId);
     if (job.cancelled) {
+      jobs.delete(job.id);
       webContents.send("transcode:complete", {
-        jobId,
-        taskId: options.taskId || null,
+        jobId: job.id,
+        taskId: job.options.taskId || null,
         ok: false,
         cancelled: true,
-        outputPath,
+        outputPath: job.outputPath,
         error: "任务已取消。"
       });
       return;
     }
 
     if (code !== 0) {
-      cleanupFailedOutput(outputPath);
+      const usefulError = extractUsefulError(job.stderr);
+      if (job.fallbackPlan && !job.fallbackAttempted && shouldFallbackFromHardware(usefulError || job.stderr)) {
+        cleanupFailedOutput(job.outputPath);
+        job.fallbackAttempted = true;
+        job.plan = job.fallbackPlan;
+        job.stderr = "";
+        job.paused = false;
+        webContents.send("transcode:progress", {
+          jobId: job.id,
+          taskId: job.options.taskId || null,
+          outputPath: job.outputPath,
+          percent: 0,
+          hardwareFallback: true,
+          encoderUsed: job.plan.encoder,
+          encoderLabel: job.plan.encoderLabel,
+          state: "fallback"
+        });
+        launchJob(webContents, job);
+        return;
+      }
+
+      jobs.delete(job.id);
+      cleanupFailedOutput(job.outputPath);
       webContents.send("transcode:complete", {
-        jobId,
-        taskId: options.taskId || null,
+        jobId: job.id,
+        taskId: job.options.taskId || null,
         ok: false,
-        outputPath,
-        error: extractUsefulError(job.stderr) || `ffmpeg 退出码：${code}`
+        outputPath: job.outputPath,
+        error: usefulError || `ffmpeg 退出码：${code}`
       });
       return;
     }
 
     let verification = null;
     try {
-      verification = verifyOutput(input, outputPath, {
-        codec: options.codec,
-        requestedBitrateMbps,
-        effectiveBitrateMbps,
-        bitrateProtection,
-        outputFormat
+      verification = verifyOutput(job.input, job.outputPath, {
+        codec: job.options.codec,
+        requestedBitrateMbps: job.requestedBitrateMbps,
+        effectiveBitrateMbps: job.effectiveBitrateMbps,
+        bitrateProtection: job.bitrateProtection,
+        outputFormat: job.options.outputFormat,
+        hardwareAccelerated: job.plan.hardwareAccelerated,
+        encoderUsed: job.plan.encoder,
+        encoderLabel: job.plan.encoderLabel,
+        fallbackAttempted: job.fallbackAttempted
       });
     } catch (error) {
-      cleanupFailedOutput(outputPath);
+      jobs.delete(job.id);
+      cleanupFailedOutput(job.outputPath);
       webContents.send("transcode:complete", {
-        jobId,
-        taskId: options.taskId || null,
+        jobId: job.id,
+        taskId: job.options.taskId || null,
         ok: false,
-        outputPath,
+        outputPath: job.outputPath,
         error: error.message
       });
       return;
     }
 
+    jobs.delete(job.id);
     webContents.send("transcode:complete", {
-      jobId,
-      taskId: options.taskId || null,
+      jobId: job.id,
+      taskId: job.options.taskId || null,
       ok: true,
-      outputPath,
+      outputPath: job.outputPath,
       verification,
       elapsedMs: Date.now() - job.startedAt
     });
   });
-
-  return {
-    ok: true,
-    jobId,
-    outputPath,
-    pixelFormat: targetPixFmt.pixelFormat,
-    outputFormat,
-    requestedBitrateMbps,
-    effectiveBitrateMbps,
-    bitrateProtection,
-    argsPreview: [getToolPath("ffmpeg"), ...args]
-  };
 }
 
 function choosePixelFormat(sourcePixFmt, bitDepth, codec, capabilities) {
@@ -652,8 +847,18 @@ function removeEmptyOutput(filePath) {
   }
 }
 
-function buildFfmpegArgs({ input, outputPath, codec, bitrateMbps, encoderPreset, audioMode, pixelFormat, outputFormat }) {
-  const encoderConfig = ENCODERS[codec];
+function buildFfmpegArgs({
+  input,
+  outputPath,
+  codec,
+  encoder,
+  hardwareAccelerated,
+  bitrateMbps,
+  encoderPreset,
+  audioMode,
+  pixelFormat,
+  outputFormat
+}) {
   const bitrate = `${bitrateMbps}M`;
   const maxrate = `${roundToTenth(bitrateMbps * 1.35)}M`;
   const bufsize = `${roundToTenth(bitrateMbps * 2)}M`;
@@ -669,9 +874,9 @@ function buildFfmpegArgs({ input, outputPath, codec, bitrateMbps, encoderPreset,
     "0:a?",
     "-map_metadata",
     "0",
-    ...encoderConfig.baseArgs,
-    "-preset",
-    encoderPreset,
+    "-c:v",
+    encoder,
+    ...buildEncoderTuningArgs(encoder, encoderPreset),
     "-b:v",
     bitrate,
     "-maxrate",
@@ -682,11 +887,11 @@ function buildFfmpegArgs({ input, outputPath, codec, bitrateMbps, encoderPreset,
     pixelFormat
   ];
 
-  if (codec === "h265") {
+  if (encoder === "libx265") {
     args.push("-x265-params", "log-level=error:aq-mode=3:repeat-headers=1");
   }
 
-  const profile = getVideoProfile(codec, input.video.bitDepth, pixelFormat);
+  const profile = getVideoProfile(codec, input.video.bitDepth, pixelFormat, encoder, hardwareAccelerated);
   if (profile) args.push("-profile:v", profile);
 
   if (codec === "h265" && (outputFormat === "mp4" || outputFormat === "mov")) {
@@ -708,6 +913,24 @@ function buildFfmpegArgs({ input, outputPath, codec, bitrateMbps, encoderPreset,
 
   args.push("-progress", "pipe:1", "-nostats", outputPath);
   return args;
+}
+
+function buildEncoderTuningArgs(encoder, encoderPreset) {
+  if (encoder === "libx264" || encoder === "libx265") {
+    return ["-preset", encoderPreset];
+  }
+
+  if (encoder.includes("_nvenc")) {
+    const presetMap = {
+      slow: "p6",
+      medium: "p4",
+      fast: "p3",
+      veryfast: "p2"
+    };
+    return ["-preset", presetMap[encoderPreset] || "p4"];
+  }
+
+  return [];
 }
 
 function resolveAudioMode(input, outputFormat, audioMode) {
@@ -744,7 +967,9 @@ function appendColorArgs(args, video) {
   if (video.colorSpace) args.push("-colorspace", video.colorSpace);
 }
 
-function getVideoProfile(codec, bitDepth, pixelFormat) {
+function getVideoProfile(codec, bitDepth, pixelFormat, encoder, hardwareAccelerated) {
+  if (hardwareAccelerated && encoder === "hevc_videotoolbox" && bitDepth > 8) return "main10";
+  if (hardwareAccelerated) return null;
   if (bitDepth <= 8) return null;
 
   if (codec === "h264") {
@@ -783,6 +1008,67 @@ function parseProgress(chunk, duration) {
   };
 }
 
+function shouldFallbackFromHardware(errorText) {
+  return /videotoolbox|nvenc|qsv|amf|hardware|device|gpu|driver|no capable devices|cannot load|initializ|unsupported|not supported/i.test(
+    String(errorText || "")
+  );
+}
+
+function pauseProcess(job) {
+  if (!job.process || job.paused) return { ok: true };
+
+  if (process.platform === "win32") {
+    return runPowerShellProcessControl("NtSuspendProcess", job.process.pid);
+  }
+
+  try {
+    job.process.kill("SIGSTOP");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+function resumeProcess(job) {
+  if (!job.process || !job.paused) return { ok: true };
+
+  if (process.platform === "win32") {
+    return runPowerShellProcessControl("NtResumeProcess", job.process.pid);
+  }
+
+  try {
+    job.process.kill("SIGCONT");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+function runPowerShellProcessControl(method, pid) {
+  const script = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class NativeProcessControl {
+  [DllImport("ntdll.dll")]
+  public static extern int NtSuspendProcess(IntPtr processHandle);
+  [DllImport("ntdll.dll")]
+  public static extern int NtResumeProcess(IntPtr processHandle);
+}
+"@
+$process = Get-Process -Id ${Number(pid)} -ErrorAction Stop
+$result = [NativeProcessControl]::${method}($process.Handle)
+if ($result -ne 0) { throw "${method} failed with code $result" }
+`;
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
+    encoding: "utf8",
+    windowsHide: true
+  });
+
+  if (result.status === 0 && !result.error) return { ok: true };
+  return { ok: false, error: result.error?.message || result.stderr || `${method} failed.` };
+}
+
 function verifyOutput(input, outputPath, options = {}) {
   const output = probeVideo(outputPath);
   const inputDepth = Number(input.video.bitDepth || 8);
@@ -811,6 +1097,10 @@ function verifyOutput(input, outputPath, options = {}) {
     requestedBitrateMbps: options.requestedBitrateMbps,
     targetBitrateMbps: options.effectiveBitrateMbps,
     bitrateProtection: Boolean(options.bitrateProtection),
+    hardwareAccelerated: Boolean(options.hardwareAccelerated),
+    encoderUsed: options.encoderUsed || output.video.codec,
+    encoderLabel: options.encoderLabel || null,
+    fallbackAttempted: Boolean(options.fallbackAttempted),
     sourceBitrateMbps:
       input.videoBitrate || input.bitrate ? roundToTenth((input.videoBitrate || input.bitrate) / 1_000_000) : null,
     sourceAudioBitrateMbps: input.audioBitrate ? roundToTenth(input.audioBitrate / 1_000_000) : null,
