@@ -6,7 +6,7 @@
 
 ## 成品包
 
-- macOS Apple Silicon：`release/码上瘦身-0.1.5-arm64.dmg`
+- macOS Apple Silicon：`release/码上瘦身-0.1.6-arm64.dmg`
 - Windows x64 安装版：`release/码上瘦身-Windows-x64-安装版.zip`
 - Windows x64 便携版：`release/码上瘦身-Windows-x64-便携版.zip`，解压后直接运行单文件便携版 exe
 
@@ -19,6 +19,7 @@
 - 多任务队列处理，默认并发 2 个任务，可在设置里调整
 - 支持暂停/继续队列，正在处理的任务也会暂停
 - 默认启用硬件加速：macOS 使用 Apple VideoToolbox，Windows 自动探测 NVIDIA / Intel / AMD 硬件编码器
+- Windows / NVIDIA 优先使用 CUDA 硬解 + NVENC 编码；如果硬解不支持当前素材，会保留 NVENC 编码并自动退到 CPU 解码
 - 硬件加速、硬件模式和语言切换已收纳到独立设置面板，首页只保留常用转码选项
 - 硬件编码器不可用或不支持当前位深时，会自动回退软件编码
 - 自动读取分辨率、帧率、文件大小、像素格式、位深
@@ -75,6 +76,7 @@
 - SSD 剩余空间 50 GB 以上
 - 4K 或 10-bit 视频建议并发 1 个任务；1080p 可使用默认并发 2 个任务
 - 默认硬件加速会优先使用可用 GPU 编码器；如果驱动或显卡不支持，会自动回退软件编码
+- NVIDIA 显卡需要安装正常的 NVIDIA 驱动；软件内置 FFmpeg，不需要用户额外配置 FFmpeg 环境
 
 预估性能：
 

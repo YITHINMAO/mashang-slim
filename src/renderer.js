@@ -189,6 +189,8 @@ const I18N = {
     queueEta: "队列预计 {eta}",
     elapsed: "耗时 {time}",
     hardware: "硬件 {encoder}",
+    decodeCuda: "CUDA 解码",
+    decodeCpu: "CPU 解码",
     software: "软件编码",
     fallbackSoftware: "已回退软件编码",
     queueStatus: "{pending} 待处理 · {running} 运行 · {paused} 暂停 · {done} 完成",
@@ -309,6 +311,8 @@ const I18N = {
     queueEta: "Queue ETA {eta}",
     elapsed: "Elapsed {time}",
     hardware: "Hardware {encoder}",
+    decodeCuda: "CUDA decode",
+    decodeCpu: "CPU decode",
     software: "Software",
     fallbackSoftware: "Fell back to software",
     queueStatus: "{pending} pending · {running} running · {paused} paused · {done} done",
@@ -377,7 +381,7 @@ function applyLanguage() {
   document.querySelector(".drop-zone small").textContent = t("dropSubtitle");
 
   els.authorLink.textContent = t("author", {
-    version: state.environment?.version || "0.1.5",
+    version: state.environment?.version || "0.1.6",
     date: state.environment?.buildDate || "2026-05-27"
   });
   els.pickVideosButton.textContent = t("addVideos");
@@ -788,6 +792,7 @@ function renderFileList() {
       if (file.encoderLabel) {
         chips.append(chip(file.hardwareAccelerated ? t("hardware", { encoder: file.encoderLabel }) : t("software")));
       }
+      if (file.hardwareAccelerated && file.hardwareDecode === "cuda") chips.append(chip(t("decodeCuda")));
       if (file.fallbackAttempted) chips.append(chip(t("fallbackSoftware")));
     }
 
@@ -1081,6 +1086,10 @@ async function startFile(file) {
   file.startedAt = Date.now();
   file.elapsedMs = 0;
   file.etaSeconds = null;
+  file.rawSpeedValue = 0;
+  file.speedValue = 0;
+  file.hardwareDecode = "";
+  file.decodeLabel = "";
   updateAll();
 
   try {
@@ -1111,6 +1120,8 @@ async function startFile(file) {
     file.hardwareAccelerated = result.hardwareAccelerated;
     file.encoderLabel = result.encoderLabel;
     file.encoderUsed = result.encoderUsed;
+    file.hardwareDecode = result.hardwareDecode;
+    file.decodeLabel = result.decodeLabel;
   } catch (error) {
     file.status = "error";
     file.error = error.message;
@@ -1169,15 +1180,20 @@ function handleProgress(payload) {
     file.encoderLabel = payload.encoderLabel;
     file.encoderUsed = payload.encoderUsed;
     file.progress = 0;
+    file.currentSeconds = 0;
+    file.rawSpeedValue = 0;
+    file.speedValue = 0;
   }
   file.progress = clamp(payload.percent || 0, 0, 100);
   file.speed = payload.speed || "";
-  file.speedValue = parseSpeedValue(payload.speed);
   file.currentSeconds = payload.currentSeconds || file.currentSeconds || 0;
+  updateFileSpeedEstimate(file, payload);
   file.etaSeconds = estimateFileEta(file);
   file.hardwareAccelerated = Boolean(payload.hardwareAccelerated);
   file.encoderLabel = payload.encoderLabel || file.encoderLabel;
   file.encoderUsed = payload.encoderUsed || file.encoderUsed;
+  file.hardwareDecode = payload.hardwareDecode || file.hardwareDecode;
+  file.decodeLabel = payload.decodeLabel || file.decodeLabel;
   updateQueueStatus();
   renderFileList();
 }
@@ -1195,6 +1211,8 @@ function handleComplete(payload) {
     file.hardwareAccelerated = Boolean(payload.verification?.hardwareAccelerated);
     file.encoderLabel = payload.verification?.encoderLabel || file.encoderLabel;
     file.encoderUsed = payload.verification?.encoderUsed || file.encoderUsed;
+    file.hardwareDecode = payload.verification?.hardwareDecode || file.hardwareDecode;
+    file.decodeLabel = payload.verification?.decodeLabel || file.decodeLabel;
     file.fallbackAttempted = Boolean(payload.verification?.fallbackAttempted);
     file.error = "";
     state.lastOutputPath = payload.outputPath;
@@ -1227,6 +1245,19 @@ function parseSpeedValue(speed) {
   return match ? Number(match[1]) : 0;
 }
 
+function updateFileSpeedEstimate(file, payload) {
+  const parsed = parseSpeedValue(payload.speed);
+  file.rawSpeedValue = parsed;
+
+  const elapsed = file.startedAt ? Math.max((Date.now() - file.startedAt) / 1000, 0) : 0;
+  const observed = elapsed > 2 && payload.currentSeconds > 0 ? payload.currentSeconds / elapsed : 0;
+  const combined = parsed && observed ? parsed * 0.35 + observed * 0.65 : parsed || observed || 0;
+
+  if (combined > 0) {
+    file.speedValue = file.speedValue ? file.speedValue * 0.72 + combined * 0.28 : combined;
+  }
+}
+
 function estimateFileEta(file) {
   if (!file || !file.duration) return null;
   const speed = file.speedValue || averageObservedSpeed() || 0;
@@ -1252,7 +1283,14 @@ function averageObservedSpeed() {
     .filter((value) => value > 0);
   if (completed.length) return completed.reduce((sum, value) => sum + value, 0) / completed.length;
 
-  return state.hardwareAcceleration ? 1 : 0.55;
+  return defaultEstimatedSpeed();
+}
+
+function defaultEstimatedSpeed() {
+  if (!state.hardwareAcceleration) return 0.55;
+  if (state.environment?.platform === "win32") return 2.2;
+  if (state.environment?.platform === "darwin") return 3.2;
+  return 1;
 }
 
 function currentTaskEtaText() {
@@ -1264,16 +1302,26 @@ function estimateQueueEtaSeconds() {
   const active = state.files.filter((file) => ["queued", "ready", "running", "starting", "paused"].includes(file.status));
   if (!active.length) return null;
 
-  const speed = averageObservedSpeed();
-  const runningEta = active
-    .filter((file) => file.status === "running" || file.status === "starting" || file.status === "paused")
-    .reduce((sum, file) => sum + (estimateFileEta(file) || 0), 0);
-  const queuedWork = active
-    .filter((file) => file.status === "queued" || file.status === "ready")
-    .reduce((sum, file) => sum + Number(file.duration || 0), 0);
+  const speed = Math.max(averageObservedSpeed(), 0.1);
   const lanes = Math.max(1, Math.min(state.maxConcurrent, active.length));
+  const laneTimes = active
+    .filter((file) => file.status === "running" || file.status === "starting" || file.status === "paused")
+    .map((file) => estimateFileEta(file) || 0)
+    .slice(0, lanes);
 
-  return runningEta + queuedWork / Math.max(speed * lanes, 0.1);
+  while (laneTimes.length < lanes) laneTimes.push(0);
+
+  const queuedWorks = active
+    .filter((file) => file.status === "queued" || file.status === "ready")
+    .map((file) => Number(file.duration || 0) / speed)
+    .sort((a, b) => b - a);
+
+  for (const work of queuedWorks) {
+    const index = laneTimes.indexOf(Math.min(...laneTimes));
+    laneTimes[index] += work;
+  }
+
+  return Math.max(...laneTimes);
 }
 
 function outputSummary(file) {
@@ -1286,7 +1334,7 @@ function outputSummary(file) {
   const format = result.outputFormat || formatOutputLabel(state.outputFormat);
   const target = result.targetBitrateMbps ? t("target", { bitrate: roundToTenth(result.targetBitrateMbps) }) : "";
   const engine = result.hardwareAccelerated
-    ? t("hardware", { encoder: result.encoderLabel || result.encoderUsed || "GPU" })
+    ? formatHardwareEngine(result)
     : result.fallbackAttempted
       ? t("fallbackSoftware")
       : t("software");
@@ -1305,6 +1353,12 @@ function outputSummary(file) {
     savedPercent,
     elapsed
   });
+}
+
+function formatHardwareEngine(result) {
+  const label = t("hardware", { encoder: result.encoderLabel || result.encoderUsed || "GPU" });
+  if (result.hardwareDecode === "cuda") return `${label} / ${t("decodeCuda")}`;
+  return label;
 }
 
 function batchSummary(files) {

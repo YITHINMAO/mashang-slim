@@ -69,10 +69,13 @@ function getToolPath(tool) {
 function runSync(command, args) {
   const toolPath = getToolPath(command);
   const result = spawnSync(toolPath, args, { encoding: "utf8" });
+  const stdout = result.stdout || "";
+  const stderr = result.stderr || "";
   return {
     ok: !result.error && result.status === 0,
-    stdout: result.stdout || "",
-    stderr: result.stderr || "",
+    stdout,
+    stderr,
+    output: `${stdout}\n${stderr}`,
     error: result.error ? result.error.message : null,
     path: toolPath,
     bundled: path.isAbsolute(toolPath)
@@ -91,7 +94,7 @@ function getEncoderPixelFormats(encoder) {
   const result = runSync("ffmpeg", ["-hide_banner", "-h", `encoder=${encoder}`]);
   if (!result.ok) return [];
 
-  const match = result.stdout.match(/Supported pixel formats:\s*([^\n]+)/);
+  const match = result.output.match(/Supported pixel formats:\s*([^\n]+)/);
   if (!match) return [];
   return match[1].trim().split(/\s+/).filter(Boolean);
 }
@@ -99,7 +102,23 @@ function getEncoderPixelFormats(encoder) {
 function getAvailableEncoderNames() {
   const result = runSync("ffmpeg", ["-hide_banner", "-encoders"]);
   if (!result.ok) return [];
-  return [...result.stdout.matchAll(/^\s*[A-Z.]{6}\s+([a-zA-Z0-9_]+)\s+/gm)].map((match) => match[1]);
+  return [...result.output.matchAll(/^\s*[A-Z.]{6}\s+([a-zA-Z0-9_]+)\s+/gm)].map((match) => match[1]);
+}
+
+function hardwarePixelFormats(candidate) {
+  const detected = getEncoderPixelFormats(candidate.encoder);
+  if (detected.length) return detected;
+
+  const fallbackFormats = {
+    h264_nvenc: ["cuda", "nv12", "yuv420p"],
+    hevc_nvenc: ["cuda", "nv12", "p010le", "yuv420p", "yuv420p10le"],
+    h264_qsv: ["qsv", "nv12", "yuv420p"],
+    hevc_qsv: ["qsv", "nv12", "p010le", "yuv420p", "yuv420p10le"],
+    h264_amf: ["nv12", "yuv420p"],
+    hevc_amf: ["nv12", "p010le", "yuv420p", "yuv420p10le"]
+  };
+
+  return fallbackFormats[candidate.encoder] || [];
 }
 
 function loadCapabilities() {
@@ -117,7 +136,7 @@ function loadCapabilities() {
         .filter((candidate) => availableEncoderSet.has(candidate.encoder))
         .map((candidate) => ({
           ...candidate,
-          pixelFormats: getEncoderPixelFormats(candidate.encoder)
+          pixelFormats: hardwarePixelFormats(candidate)
         }))
     };
   }
@@ -517,11 +536,15 @@ function chooseHardwarePixelFormat(sourcePixFmt, bitDepth, candidate) {
   const source = String(sourcePixFmt || "").toLowerCase();
 
   if (bitDepth > 8) {
+    if (bitDepth > 10) return { ok: false, error: `${candidate.label} 不支持保持 ${bitDepth}-bit 输出。` };
+    if (candidate.encoder.includes("h264")) return { ok: false, error: `${candidate.label} 不支持 H.264 ${bitDepth}-bit 输出。` };
+    if (supported.includes("cuda") && candidate.vendor === "nvidia") return { ok: true, pixelFormat: "p010le" };
     if (supported.includes("p010le")) return { ok: true, pixelFormat: "p010le" };
     if (supported.includes("yuv420p10le")) return { ok: true, pixelFormat: "yuv420p10le" };
     return { ok: false, error: `${candidate.label} 不支持保持 ${bitDepth}-bit 输出。` };
   }
 
+  if (supported.includes("cuda") && candidate.vendor === "nvidia") return { ok: true, pixelFormat: "nv12" };
   if (supported.includes(source)) return { ok: true, pixelFormat: source };
   if (supported.includes("nv12")) return { ok: true, pixelFormat: "nv12" };
   if (supported.includes("yuv420p")) return { ok: true, pixelFormat: "yuv420p" };
@@ -559,21 +582,19 @@ function startTranscode(webContents, payload) {
     outputPath,
     outputFormat,
     bitrateMbps: effectiveBitrateMbps,
-    forceSoftware: false
+    forceSoftware: false,
+    hardwareDecode: "auto"
   });
 
-  const fallbackPlan =
-    plan.hardwareAccelerated && options.hardware?.allowFallback !== false
-      ? buildTranscodePlan({
-          input,
-          options,
-          capabilities,
-          outputPath,
-          outputFormat,
-          bitrateMbps: effectiveBitrateMbps,
-          forceSoftware: true
-        })
-      : null;
+  const fallbackPlans = buildFallbackPlans({
+    input,
+    options,
+    capabilities,
+    outputPath,
+    outputFormat,
+    bitrateMbps: effectiveBitrateMbps,
+    primaryPlan: plan
+  });
 
   const jobId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const job = {
@@ -586,8 +607,9 @@ function startTranscode(webContents, payload) {
     effectiveBitrateMbps,
     bitrateProtection,
     plan,
-    fallbackPlan,
+    fallbackPlans,
     fallbackAttempted: false,
+    fallbackReason: "",
     cancelled: false,
     paused: false,
     startedAt: Date.now(),
@@ -608,17 +630,56 @@ function startTranscode(webContents, payload) {
     hardwareAccelerated: plan.hardwareAccelerated,
     encoderUsed: plan.encoder,
     encoderLabel: plan.encoderLabel,
+    hardwareDecode: plan.hardwareDecode,
+    decodeLabel: plan.decodeLabel,
     argsPreview: [getToolPath("ffmpeg"), ...plan.args]
   };
 }
 
-function buildTranscodePlan({ input, options, capabilities, outputPath, outputFormat, bitrateMbps, forceSoftware }) {
+function buildFallbackPlans({ input, options, capabilities, outputPath, outputFormat, bitrateMbps, primaryPlan }) {
+  if (!primaryPlan.hardwareAccelerated || options.hardware?.allowFallback === false) return [];
+
+  const fallbacks = [];
+  if (primaryPlan.hardwareDecode === "cuda") {
+    fallbacks.push(
+      buildTranscodePlan({
+        input,
+        options,
+        capabilities,
+        outputPath,
+        outputFormat,
+        bitrateMbps,
+        forceSoftware: false,
+        hardwareDecode: "off"
+      })
+    );
+  }
+
+  fallbacks.push(
+    buildTranscodePlan({
+      input,
+      options,
+      capabilities,
+      outputPath,
+      outputFormat,
+      bitrateMbps,
+      forceSoftware: true,
+      hardwareDecode: "off"
+    })
+  );
+
+  return fallbacks;
+}
+
+function buildTranscodePlan({ input, options, capabilities, outputPath, outputFormat, bitrateMbps, forceSoftware, hardwareDecode }) {
   const codec = options.codec;
   const hardwareCandidate = forceSoftware ? null : selectHardwareCandidate(codec, capabilities, options.hardware || {});
   let encoder = ENCODERS[codec].encoder;
   let encoderLabel = ENCODERS[codec].name;
   let hardwareAccelerated = false;
   let targetPixFmt = null;
+  let selectedHardwareDecode = "off";
+  let decodeLabel = "CPU decode";
 
   if (hardwareCandidate) {
     const hardwarePixFmt = chooseHardwarePixelFormat(input.video.pixFmt, input.video.bitDepth, hardwareCandidate);
@@ -627,6 +688,8 @@ function buildTranscodePlan({ input, options, capabilities, outputPath, outputFo
       encoderLabel = hardwareCandidate.label;
       hardwareAccelerated = true;
       targetPixFmt = hardwarePixFmt;
+      selectedHardwareDecode = chooseHardwareDecodeMode(input, hardwareCandidate, hardwareDecode);
+      decodeLabel = selectedHardwareDecode === "cuda" ? "CUDA decode" : "CPU decode";
     }
   }
 
@@ -644,6 +707,7 @@ function buildTranscodePlan({ input, options, capabilities, outputPath, outputFo
     codec,
     encoder,
     hardwareAccelerated,
+    hardwareDecode: selectedHardwareDecode,
     bitrateMbps,
     encoderPreset: options.encoderPreset || "medium",
     audioMode: options.audioMode || "auto",
@@ -656,8 +720,19 @@ function buildTranscodePlan({ input, options, capabilities, outputPath, outputFo
     encoder,
     encoderLabel,
     hardwareAccelerated,
+    hardwareDecode: selectedHardwareDecode,
+    decodeLabel,
     pixelFormat: targetPixFmt.pixelFormat
   };
+}
+
+function chooseHardwareDecodeMode(input, candidate, requestedMode) {
+  if (requestedMode === "off") return "off";
+  if (process.platform !== "win32" || candidate.vendor !== "nvidia") return "off";
+
+  const codec = String(input.video?.codec || "").toLowerCase();
+  const cudaDecodable = new Set(["h264", "hevc", "av1", "vp9", "mpeg2video", "vc1"]);
+  return cudaDecodable.has(codec) ? "cuda" : "off";
 }
 
 function launchJob(webContents, job) {
@@ -676,6 +751,8 @@ function launchJob(webContents, job) {
         hardwareAccelerated: job.plan.hardwareAccelerated,
         encoderUsed: job.plan.encoder,
         encoderLabel: job.plan.encoderLabel,
+        hardwareDecode: job.plan.hardwareDecode,
+        decodeLabel: job.plan.decodeLabel,
         ...progress
       });
     }
@@ -717,10 +794,11 @@ function launchJob(webContents, job) {
 
     if (code !== 0) {
       const usefulError = extractUsefulError(job.stderr);
-      if (job.fallbackPlan && !job.fallbackAttempted && shouldFallbackFromHardware(usefulError || job.stderr)) {
+      if (job.fallbackPlans.length && shouldFallbackFromHardware(usefulError || job.stderr)) {
         cleanupFailedOutput(job.outputPath);
         job.fallbackAttempted = true;
-        job.plan = job.fallbackPlan;
+        job.fallbackReason = usefulError || "硬件路径启动失败，已自动切换备用方案。";
+        job.plan = job.fallbackPlans.shift();
         job.stderr = "";
         job.paused = false;
         webContents.send("transcode:progress", {
@@ -731,6 +809,9 @@ function launchJob(webContents, job) {
           hardwareFallback: true,
           encoderUsed: job.plan.encoder,
           encoderLabel: job.plan.encoderLabel,
+          hardwareAccelerated: job.plan.hardwareAccelerated,
+          hardwareDecode: job.plan.hardwareDecode,
+          decodeLabel: job.plan.decodeLabel,
           state: "fallback"
         });
         launchJob(webContents, job);
@@ -760,9 +841,36 @@ function launchJob(webContents, job) {
         hardwareAccelerated: job.plan.hardwareAccelerated,
         encoderUsed: job.plan.encoder,
         encoderLabel: job.plan.encoderLabel,
-        fallbackAttempted: job.fallbackAttempted
+        hardwareDecode: job.plan.hardwareDecode,
+        decodeLabel: job.plan.decodeLabel,
+        fallbackAttempted: job.fallbackAttempted,
+        fallbackReason: job.fallbackReason
       });
     } catch (error) {
+      if (job.fallbackPlans.length) {
+        cleanupFailedOutput(job.outputPath);
+        job.fallbackAttempted = true;
+        job.fallbackReason = error.message;
+        job.plan = job.fallbackPlans.shift();
+        job.stderr = "";
+        job.paused = false;
+        webContents.send("transcode:progress", {
+          jobId: job.id,
+          taskId: job.options.taskId || null,
+          outputPath: job.outputPath,
+          percent: 0,
+          hardwareFallback: true,
+          encoderUsed: job.plan.encoder,
+          encoderLabel: job.plan.encoderLabel,
+          hardwareAccelerated: job.plan.hardwareAccelerated,
+          hardwareDecode: job.plan.hardwareDecode,
+          decodeLabel: job.plan.decodeLabel,
+          state: "fallback"
+        });
+        launchJob(webContents, job);
+        return;
+      }
+
       jobs.delete(job.id);
       cleanupFailedOutput(job.outputPath);
       webContents.send("transcode:complete", {
@@ -853,6 +961,7 @@ function buildFfmpegArgs({
   codec,
   encoder,
   hardwareAccelerated,
+  hardwareDecode,
   bitrateMbps,
   encoderPreset,
   audioMode,
@@ -866,6 +975,7 @@ function buildFfmpegArgs({
   const args = [
     "-hide_banner",
     "-y",
+    ...buildInputHardwareArgs(hardwareDecode),
     "-i",
     input.path,
     "-map",
@@ -882,10 +992,12 @@ function buildFfmpegArgs({
     "-maxrate",
     maxrate,
     "-bufsize",
-    bufsize,
-    "-pix_fmt",
-    pixelFormat
+    bufsize
   ];
+
+  if (hardwareDecode !== "cuda") {
+    args.push("-pix_fmt", pixelFormat);
+  }
 
   if (encoder === "libx265") {
     args.push("-x265-params", "log-level=error:aq-mode=3:repeat-headers=1");
@@ -922,12 +1034,20 @@ function buildEncoderTuningArgs(encoder, encoderPreset) {
 
   if (encoder.includes("_nvenc")) {
     const presetMap = {
-      slow: "p6",
-      medium: "p4",
-      fast: "p3",
-      veryfast: "p2"
+      slow: "p5",
+      medium: "p3",
+      fast: "p2",
+      veryfast: "p1"
     };
-    return ["-preset", presetMap[encoderPreset] || "p4"];
+    return ["-preset", presetMap[encoderPreset] || "p3", "-rc", "vbr"];
+  }
+
+  return [];
+}
+
+function buildInputHardwareArgs(hardwareDecode) {
+  if (hardwareDecode === "cuda") {
+    return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda", "-extra_hw_frames", "16"];
   }
 
   return [];
@@ -969,6 +1089,7 @@ function appendColorArgs(args, video) {
 
 function getVideoProfile(codec, bitDepth, pixelFormat, encoder, hardwareAccelerated) {
   if (hardwareAccelerated && encoder === "hevc_videotoolbox" && bitDepth > 8) return "main10";
+  if (hardwareAccelerated && encoder === "hevc_nvenc" && bitDepth > 8) return "main10";
   if (hardwareAccelerated) return null;
   if (bitDepth <= 8) return null;
 
@@ -1009,7 +1130,7 @@ function parseProgress(chunk, duration) {
 }
 
 function shouldFallbackFromHardware(errorText) {
-  return /videotoolbox|nvenc|qsv|amf|hardware|device|gpu|driver|no capable devices|cannot load|initializ|unsupported|not supported/i.test(
+  return /videotoolbox|nvenc|qsv|amf|cuda|cuvid|hwaccel|hardware|device|gpu|driver|decoder|filter|pixel format|conversion|no capable devices|cannot load|initializ|unsupported|not supported/i.test(
     String(errorText || "")
   );
 }
@@ -1100,7 +1221,10 @@ function verifyOutput(input, outputPath, options = {}) {
     hardwareAccelerated: Boolean(options.hardwareAccelerated),
     encoderUsed: options.encoderUsed || output.video.codec,
     encoderLabel: options.encoderLabel || null,
+    hardwareDecode: options.hardwareDecode || "off",
+    decodeLabel: options.decodeLabel || null,
     fallbackAttempted: Boolean(options.fallbackAttempted),
+    fallbackReason: options.fallbackReason || "",
     sourceBitrateMbps:
       input.videoBitrate || input.bitrate ? roundToTenth((input.videoBitrate || input.bitrate) / 1_000_000) : null,
     sourceAudioBitrateMbps: input.audioBitrate ? roundToTenth(input.audioBitrate / 1_000_000) : null,
@@ -1128,7 +1252,7 @@ function extractUsefulError(stderr) {
   const important = [...lines].reverse().find(
     (line) =>
       !ignored.has(line) &&
-      /could not find tag|could not write header|error initializing|invalid argument|not currently supported|not supported|unknown encoder|encoder.*not found|unable|failed/i.test(
+      /could not find tag|could not write header|error initializing|invalid argument|not currently supported|not supported|unknown encoder|encoder.*not found|cuda|cuvid|nvenc|qsv|amf|hardware|unable|failed/i.test(
         line
       )
   );
