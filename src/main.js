@@ -144,6 +144,107 @@ function loadCapabilities() {
   return { ffmpeg, ffprobe, encoders, availableEncoderNames };
 }
 
+function checkEncoderAvailability(encoderName) {
+  const result = runSync("ffmpeg", ["-hide_banner", "-f", "lavfi", "-i", "nullsrc=s=1920x1080:r=1", "-c:v", encoderName, "-frames:v", "1", "-f", "null", "-"]);
+  
+  if (result.ok) return true;
+  
+  const errorMessage = (result.stderr || result.error || "").toLowerCase();
+  const deviceErrors = ["no such device", "cannot load", "not found", "device not found", "failed to open", "could not initialize", "unsupported", "out of memory", "resource temporarily unavailable"];
+  
+  for (const error of deviceErrors) {
+    if (errorMessage.includes(error)) {
+      return false;
+    }
+  }
+  
+  return false;
+}
+
+function measureSoftwareEncodingSpeed() {
+  const startTime = Date.now();
+  const result = runSync("ffmpeg", ["-hide_banner", "-f", "lavfi", "-i", "nullsrc=s=1920x1080:r=30", "-c:v", "libx264", "-preset", "medium", "-frames:v", "100", "-f", "null", "-"]);
+  const elapsedMs = Date.now() - startTime;
+  
+  if (!result.ok) {
+    return { ok: false, speedLevel: "unknown", fps: 0 };
+  }
+  
+  const fps = Math.round(100 / (elapsedMs / 1000));
+  
+  let speedLevel;
+  if (fps >= 60) {
+    speedLevel = "fast";
+  } else if (fps >= 30) {
+    speedLevel = "medium";
+  } else {
+    speedLevel = "slow";
+  }
+  
+  return { ok: true, speedLevel, fps };
+}
+
+function detectHardwareCapabilities() {
+  const capabilities = loadCapabilities();
+  const availableSet = new Set(capabilities.availableEncoderNames);
+  const vendors = [];
+
+  const appleH264Available = availableSet.has("h264_videotoolbox") && checkEncoderAvailability("h264_videotoolbox");
+  const appleH265Available = availableSet.has("hevc_videotoolbox") && checkEncoderAvailability("hevc_videotoolbox");
+  vendors.push({
+    vendor: "apple",
+    label: "Apple VideoToolbox",
+    h264: appleH264Available,
+    h265: appleH265Available,
+    available: appleH264Available || appleH265Available
+  });
+
+  const nvidiaH264 = availableSet.has("h264_nvenc") && checkEncoderAvailability("h264_nvenc");
+  const nvidiaH265 = availableSet.has("hevc_nvenc") && checkEncoderAvailability("hevc_nvenc");
+  vendors.push({
+    vendor: "nvidia",
+    label: "NVIDIA NVENC",
+    h264: nvidiaH264,
+    h265: nvidiaH265,
+    available: nvidiaH264 || nvidiaH265
+  });
+
+  const intelH264 = availableSet.has("h264_qsv") && checkEncoderAvailability("h264_qsv");
+  const intelH265 = availableSet.has("hevc_qsv") && checkEncoderAvailability("hevc_qsv");
+  vendors.push({
+    vendor: "intel",
+    label: "Intel Quick Sync",
+    h264: intelH264,
+    h265: intelH265,
+    available: intelH264 || intelH265
+  });
+
+  const amdH264 = availableSet.has("h264_amf") && checkEncoderAvailability("h264_amf");
+  const amdH265 = availableSet.has("hevc_amf") && checkEncoderAvailability("hevc_amf");
+  vendors.push({
+    vendor: "amd",
+    label: "AMD AMF",
+    h264: amdH264,
+    h265: amdH265,
+    available: amdH264 || amdH265
+  });
+
+  const softwareH264 = availableSet.has("libx264") && checkEncoderAvailability("libx264");
+  const softwareH265 = availableSet.has("libx265") && checkEncoderAvailability("libx265");
+  
+  const softwareSpeed = softwareH264 ? measureSoftwareEncodingSpeed() : { ok: false, speedLevel: "unknown", fps: 0 };
+  
+  return {
+    platform: process.platform,
+    software: softwareH264 || softwareH265,
+    softwareH264,
+    softwareH265,
+    softwareSpeedLevel: softwareSpeed.speedLevel,
+    softwareFps: softwareSpeed.fps,
+    vendors
+  };
+}
+
 function expandInputPaths(inputPaths) {
   const expanded = [];
   const seen = new Set();
@@ -216,6 +317,10 @@ app.whenReady().then(() => {
       defaultOutputDir: app.getPath("videos"),
       capabilities: loadCapabilities()
     };
+  });
+
+  ipcMain.handle("app:detectHardware", () => {
+    return detectHardwareCapabilities();
   });
 
   ipcMain.handle("dialog:selectVideos", async () => {

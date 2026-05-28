@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("transcoder", {
   getEnvironment: () => ipcRenderer.invoke("app:getEnvironment"),
+  detectHardware: () => ipcRenderer.invoke("app:detectHardware"),
   selectVideos: () => ipcRenderer.invoke("dialog:selectVideos"),
   selectFolders: () => ipcRenderer.invoke("dialog:selectFolders"),
   selectOutputDir: () => ipcRenderer.invoke("dialog:selectOutputDir"),

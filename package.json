@@ -1,6 +1,6 @@
 {
   "name": "mashang-slim",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "码上瘦身，本地离线视频转码瘦身工具。",
   "main": "src/main.js",
   "private": true,

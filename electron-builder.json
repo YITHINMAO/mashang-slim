@@ -44,8 +44,9 @@
     ],
     "target": [
       "nsis",
-      "portable"
-    ]
+        "portable"
+    ],
+    "signAndEditExecutable": false
   },
   "nsis": {
     "artifactName": "${productName}-${version}-${arch}-安装程序.${ext}",

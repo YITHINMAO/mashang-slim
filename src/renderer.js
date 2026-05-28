@@ -49,6 +49,10 @@ const els = {
   hardwareStatus: document.querySelector("#hardwareStatus"),
   hardwareAcceleration: document.querySelector("#hardwareAcceleration"),
   hardwareAccelerationLabel: document.querySelector("#hardwareAccelerationLabel"),
+  detectHardwareButton: document.querySelector("#detectHardwareButton"),
+  detectHardwareButtonText: document.querySelector("#detectHardwareButtonText"),
+  hardwareDetectResult: document.querySelector("#hardwareDetectResult"),
+  hardwareDetectList: document.querySelector("#hardwareDetectList"),
   hardwareMode: document.querySelector("#hardwareMode"),
   languageSelect: document.querySelector("#languageSelect"),
   modePreset: document.querySelector("#modePreset"),
@@ -119,6 +123,25 @@ const I18N = {
     hardwareSoftware: "仅软件编码",
     hardwareStatusAuto: "硬件加速：自动",
     hardwareStatusOff: "硬件加速：关闭",
+    detectHardware: "检测本机硬件加速能力",
+    detectingHardware: "正在检测...",
+    hardwareDetected: "检测完成",
+    hardwareDetectHint: "点击检测查看本机可用的硬件加速方案",
+    vendorAvailable: "可用",
+    vendorUnavailable: "不可用",
+    vendorH264: "H.264",
+    vendorH265: "H.265",
+    softwareAvailable: "软件编码可用",
+    softwareUnavailable: "软件编码不可用",
+    softwareSpeedSlow: "一般",
+    softwareSpeedMedium: "适中",
+    softwareSpeedFast: "高速",
+    softwareSpeedUnknown: "未知",
+    vendorApple: "Apple VideoToolbox",
+    vendorNvidia: "NVIDIA NVENC",
+    vendorIntel: "Intel Quick Sync",
+    vendorAmd: "AMD AMF",
+    smartMatch: "智能匹配",
     language: "语言",
     presetMode: "预设",
     customBitrate: "手动码率",
@@ -241,6 +264,25 @@ const I18N = {
     hardwareSoftware: "Software only",
     hardwareStatusAuto: "Hardware: auto",
     hardwareStatusOff: "Hardware: off",
+    detectHardware: "Detect hardware acceleration",
+    detectingHardware: "Detecting...",
+    hardwareDetected: "Detection complete",
+    hardwareDetectHint: "Click to detect available hardware encoders",
+    vendorAvailable: "Available",
+    vendorUnavailable: "Not available",
+    vendorH264: "H.264",
+    vendorH265: "H.265",
+    softwareAvailable: "Software encoding available",
+    softwareUnavailable: "Software encoding unavailable",
+    softwareSpeedSlow: "Slow",
+    softwareSpeedMedium: "Medium",
+    softwareSpeedFast: "Fast",
+    softwareSpeedUnknown: "Unknown",
+    vendorApple: "Apple VideoToolbox",
+    vendorNvidia: "NVIDIA NVENC",
+    vendorIntel: "Intel Quick Sync",
+    vendorAmd: "AMD AMF",
+    smartMatch: "Smart Match",
     language: "Language",
     presetMode: "Preset",
     customBitrate: "Manual bitrate",
@@ -375,52 +417,89 @@ function t(key, values = {}) {
 function applyLanguage() {
   document.documentElement.lang = state.language === "en" ? "en" : "zh-CN";
   document.title = t("appName");
-  document.querySelector("h1").textContent = t("appName");
-  document.querySelector(".splash-stack strong").textContent = t("appName");
-  document.querySelector(".drop-zone strong").textContent = t("dropTitle");
-  document.querySelector(".drop-zone small").textContent = t("dropSubtitle");
+  
+  const h1 = document.querySelector("h1");
+  if (h1) h1.textContent = t("appName");
+  
+  const dropZoneStrong = document.querySelector("#dropZone strong");
+  if (dropZoneStrong) dropZoneStrong.textContent = t("dropTitle");
+  
+  const dropZoneSmall = document.querySelector("#dropZone small");
+  if (dropZoneSmall) dropZoneSmall.textContent = t("dropSubtitle");
 
-  els.authorLink.textContent = t("author", {
-    version: state.environment?.version || "0.1.6",
-    date: state.environment?.buildDate || "2026-05-27"
-  });
-  els.pickVideosButton.textContent = t("addVideos");
-  els.pickFoldersButton.textContent = t("addFolders");
-  els.clearListButton.textContent = t("clear");
-  els.settingsButtonLabel.textContent = t("settingsButton");
-  els.settingsDrawerTitle.textContent = t("settingsTitle");
-  els.settingsDrawerSubtitle.textContent = t("settingsSubtitle");
-  els.closeSettingsButton.setAttribute("aria-label", t("closeSettings"));
-  document.querySelector(".section-title h2").textContent = t("queueTitle");
+  if (els.authorLink) {
+    els.authorLink.textContent = t("author", {
+      version: state.environment?.version || "0.1.6",
+      date: state.environment?.buildDate || "2026-05-27"
+    });
+  }
+  
+  if (els.pickVideosButton) els.pickVideosButton.textContent = t("addVideos");
+  if (els.pickFoldersButton) els.pickFoldersButton.textContent = t("addFolders");
+  if (els.clearListButton) els.clearListButton.textContent = t("clear");
+  
+  const queueTitle = document.querySelector(".section-title h2");
+  if (queueTitle) queueTitle.textContent = t("queueTitle");
+  
   labelFor("codecSelect", t("outputCodec"));
   labelFor("outputFormatSelect", t("outputFormat"));
-  document.querySelector(".settings-card h2").textContent = t("queueSettings");
+  
+  const queueSettingsTitle = document.querySelector(".settings-card h2");
+  if (queueSettingsTitle) queueSettingsTitle.textContent = t("queueSettings");
+  
   labelFor("concurrencyInput", t("concurrencyLimit"));
-  document.querySelector(".number-row span").textContent = t("tasksUnit");
-  document.querySelector(".setting-note").textContent = t("concurrencyNote");
-  els.advancedSettingsTitle.textContent = t("advancedSettings");
-  els.hardwareAccelerationLabel.textContent = t("hardwareEnabled");
-  labelFor("hardwareMode", t("hardwareMode"));
-  labelFor("languageSelect", t("language"));
-  els.modePreset.textContent = t("presetMode");
-  els.modeCustom.textContent = t("customBitrate");
-  document.querySelector("#presetPanel .field-label").textContent = t("qualityPreset");
+  
+  const tasksUnit = document.querySelector(".number-row span");
+  if (tasksUnit) tasksUnit.textContent = t("tasksUnit");
+  
+  const concurrencyNote = document.querySelector(".setting-note");
+  if (concurrencyNote) concurrencyNote.textContent = t("concurrencyNote");
+
+  if (els.modePreset) els.modePreset.textContent = t("presetMode");
+  if (els.modeCustom) els.modeCustom.textContent = t("customBitrate");
+  
+  const qualityPresetLabel = document.querySelector("#presetPanel .field-label");
+  if (qualityPresetLabel) qualityPresetLabel.textContent = t("qualityPreset");
+  
   presetLabel("compact", t("compact"));
   presetLabel("balanced", t("balanced"));
   presetLabel("high", t("high"));
   presetLabel("master", t("master"));
+  
   labelFor("bitrateSlider", t("bitrate"));
-  els.applyRecommendedButton.textContent = t("applyRecommended");
-  els.bitrateProtectionLabel.textContent = t("conservativeMode");
+  
+  if (els.applyRecommendedButton) els.applyRecommendedButton.textContent = t("applyRecommended");
+  if (els.bitrateProtectionLabel) els.bitrateProtectionLabel.textContent = t("conservativeMode");
+  
   labelFor("encoderPreset", t("encoderSpeed"));
   labelFor("audioMode", t("audio"));
-  els.outputDirLabel.textContent = t("outputFolder");
-  els.chooseOutputButton.textContent = t("choose");
-  els.startButton.textContent = t("startQueue");
-  els.cancelButton.textContent = t("stopQueue");
-  els.revealButton.textContent = t("reveal");
-  document.querySelector(".results-band h2").textContent = t("outputNotes");
-  els.languageSelect.value = state.language;
+  
+  if (els.outputDirLabel) els.outputDirLabel.textContent = t("outputFolder");
+  if (els.chooseOutputButton) els.chooseOutputButton.textContent = t("choose");
+  if (els.settingsButtonLabel) els.settingsButtonLabel.textContent = t("settingsButton");
+  
+  if (els.settingsDrawerTitle) els.settingsDrawerTitle.textContent = t("settingsTitle");
+  if (els.settingsDrawerSubtitle) els.settingsDrawerSubtitle.textContent = t("settingsSubtitle");
+  if (els.advancedSettingsTitle) els.advancedSettingsTitle.textContent = t("advancedSettings");
+  if (els.hardwareAccelerationLabel) els.hardwareAccelerationLabel.textContent = t("hardwareEnabled");
+  labelFor("hardwareMode", t("hardwareMode"));
+  labelFor("languageSelect", t("language"));
+
+  if (els.startButton) els.startButton.textContent = t("startQueue");
+  if (els.cancelButton) els.cancelButton.textContent = t("stopQueue");
+  
+  const outputNotes = document.querySelector(".results-band h2");
+  if (outputNotes) outputNotes.textContent = t("outputNotes");
+  
+  if (els.languageSelect) els.languageSelect.value = state.language;
+
+  if (state.files.length === 0 && els.progressMeta) {
+    els.progressMeta.textContent = t("addToStart");
+  }
+  
+  if (els.bitDepthGuard && !els.bitDepthGuard.classList.contains("active")) {
+    els.bitDepthGuard.textContent = t("bitDepthStandby");
+  }
 
   setSelectLabels();
   if (state.environment) updateRuntimeStatus();
@@ -441,6 +520,10 @@ function setSelectLabels() {
   setOptionLabel(els.outputFormatSelect, "mp4", t("outputMp4"));
   setOptionLabel(els.hardwareMode, "auto", t("hardwareAuto"));
   setOptionLabel(els.hardwareMode, "software", t("hardwareSoftware"));
+  setOptionLabel(els.hardwareMode, "apple", t("vendorApple"));
+  setOptionLabel(els.hardwareMode, "nvidia", t("vendorNvidia"));
+  setOptionLabel(els.hardwareMode, "intel", t("vendorIntel"));
+  setOptionLabel(els.hardwareMode, "amd", t("vendorAmd"));
   setOptionLabel(els.encoderPreset, "slow", t("speedSlow"));
   setOptionLabel(els.encoderPreset, "medium", t("speedMedium"));
   setOptionLabel(els.encoderPreset, "fast", t("speedFast"));
@@ -559,6 +642,8 @@ function bindUi() {
     }
     updateAll();
   });
+
+  els.detectHardwareButton.addEventListener("click", () => detectHardware());
   els.languageSelect.addEventListener("change", () => {
     state.language = els.languageSelect.value;
     localStorage.setItem("mashang-language", state.language);
@@ -707,6 +792,121 @@ function updateRuntimeStatus() {
     return;
   }
   els.runtimeStatus.textContent = t("runtimeMissing");
+}
+
+async function detectHardware() {
+  if (!api) return;
+
+  els.detectHardwareButton.disabled = true;
+  els.detectHardwareButtonText.textContent = t("detectingHardware");
+  els.hardwareDetectResult.hidden = true;
+
+  let result;
+  try {
+    result = await api.detectHardware();
+  } catch {
+    els.detectHardwareButtonText.textContent = t("detectHardware");
+    els.detectHardwareButton.disabled = false;
+    return;
+  }
+
+  els.detectHardwareButtonText.textContent = t("hardwareDetected");
+  els.detectHardwareButton.disabled = false;
+  els.hardwareDetectResult.hidden = false;
+
+  const list = els.hardwareDetectList;
+  list.innerHTML = "";
+
+  for (const vendor of result.vendors) {
+    const item = document.createElement("div");
+    item.className = `hardware-vendor-item ${vendor.available ? "available" : "unavailable"}`;
+
+    const icon = document.createElement("span");
+    icon.className = `vendor-status-icon ${vendor.available ? "ok" : "fail"}`;
+    icon.textContent = vendor.available ? "✓" : "✗";
+
+    const info = document.createElement("div");
+    info.className = "vendor-info";
+    info.innerHTML = `
+      <span class="vendor-name">${t(`vendor${vendor.vendor.charAt(0).toUpperCase() + vendor.vendor.slice(1)}`)}</span>
+      <span class="vendor-status">${vendor.available ? t("vendorAvailable") : t("vendorUnavailable")}</span>
+    `;
+
+    if (vendor.available) {
+      const codecs = document.createElement("span");
+      codecs.className = "vendor-codecs";
+      const parts = [];
+      if (vendor.h264) parts.push(t("vendorH264"));
+      if (vendor.h265) parts.push(t("vendorH265"));
+      codecs.textContent = parts.join(" / ");
+      info.appendChild(codecs);
+    }
+
+    item.appendChild(icon);
+    item.appendChild(info);
+    list.appendChild(item);
+  }
+
+  const swItem = document.createElement("div");
+  swItem.className = `hardware-vendor-item ${result.software ? "available" : "unavailable"}`;
+  const swIcon = document.createElement("span");
+  swIcon.className = `vendor-status-icon ${result.software ? "ok" : "fail"}`;
+  swIcon.textContent = result.software ? "✓" : "✗";
+  const swInfo = document.createElement("div");
+  swInfo.className = "vendor-info";
+  const softwareCodecs = [];
+  if (result.softwareH264) softwareCodecs.push(t("vendorH264"));
+  if (result.softwareH265) softwareCodecs.push(t("vendorH265"));
+  
+  let speedText = "";
+  if (result.software) {
+    const speedKey = `softwareSpeed${result.softwareSpeedLevel.charAt(0).toUpperCase() + result.softwareSpeedLevel.slice(1)}`;
+    speedText = ` <span class="vendor-speed">${t(speedKey)} (${result.softwareFps} FPS)</span>`;
+  }
+  
+  swInfo.innerHTML = `
+    <span class="vendor-name">${t("encoderSpeed")}</span>
+    <span class="vendor-status">${result.software ? t("softwareAvailable") : t("softwareUnavailable")}${speedText}</span>
+    ${softwareCodecs.length ? `<span class="vendor-codecs">${softwareCodecs.join(" / ")}</span>` : ""}
+  `;
+  swItem.appendChild(swIcon);
+  swItem.appendChild(swInfo);
+  list.appendChild(swItem);
+
+  els.hardwareMode.querySelector("option[value='auto']").textContent = `${t("hardwareAuto")}（${t("smartMatch")}）`;
+
+  updateHardwareModeOptions(result);
+}
+
+function updateHardwareModeOptions(detectResult) {
+  const select = els.hardwareMode;
+  const currentValue = select.value;
+
+  const allVendorOptions = select.querySelectorAll("option[value='apple'],option[value='nvidia'],option[value='intel'],option[value='amd']");
+  allVendorOptions.forEach((opt) => opt.hidden = true);
+
+  if (!detectResult) return;
+
+  for (const vendor of detectResult.vendors) {
+    const opt = select.querySelector(`option[value='${vendor.vendor}']`);
+    if (opt) {
+      opt.hidden = !vendor.available;
+    }
+  }
+
+  if (![...select.options].some((o) => o.value === currentValue && !o.hidden)) {
+    const firstAvailable = [...select.options].find((o) => !o.hidden);
+    if (firstAvailable) {
+      select.value = firstAvailable.value;
+      state.hardwareMode = firstAvailable.value;
+      if (firstAvailable.value === "software") {
+        state.hardwareAcceleration = false;
+        els.hardwareAcceleration.checked = false;
+      }
+    }
+  }
+
+  updateAll();
 }
 
 function renderFileList() {
