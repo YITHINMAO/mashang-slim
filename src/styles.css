@@ -985,3 +985,109 @@ input[type="range"] {
     max-width: calc(100vw - 170px);
   }
 }
+
+.hardware-detect-section {
+  margin-bottom: 14px;
+}
+
+.detect-button {
+  width: 100%;
+  justify-content: center;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px dashed var(--line);
+  background: rgba(255, 252, 240, 0.64);
+  transition: background 120ms;
+}
+
+.detect-button:hover {
+  background: rgba(251, 239, 210, 0.64);
+}
+
+.detect-button:disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.hardware-detect-result {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 252, 240, 0.74);
+  border: 1px solid var(--line);
+}
+
+.hardware-detect-result[hidden] {
+  display: none;
+}
+
+.hardware-detect-list {
+  display: grid;
+  gap: 8px;
+}
+
+.hardware-vendor-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(213, 199, 170, 0.42);
+}
+
+.hardware-vendor-item.available {
+  border-color: rgba(66, 184, 131, 0.32);
+  background: rgba(240, 255, 240, 0.48);
+}
+
+.hardware-vendor-item.unavailable {
+  border-color: rgba(226, 192, 168, 0.42);
+  background: rgba(252, 250, 247, 0.48);
+}
+
+.vendor-status-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.vendor-status-icon.ok {
+  color: #2a7d4f;
+  background: rgba(66, 184, 131, 0.14);
+}
+
+.vendor-status-icon.fail {
+  color: #a07a5a;
+  background: rgba(180, 140, 110, 0.12);
+}
+
+.vendor-info {
+  display: grid;
+  gap: 2px;
+}
+
+.vendor-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #3d3226);
+}
+
+.vendor-status {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.vendor-codecs {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #5a8f5a;
+  letter-spacing: 0.03em;
+}

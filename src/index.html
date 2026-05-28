@@ -228,6 +228,16 @@
             <input id="hardwareAcceleration" type="checkbox" checked />
             <span id="hardwareAccelerationLabel">启用硬件加速</span>
           </label>
+
+          <div class="hardware-detect-section">
+            <button id="detectHardwareButton" class="ghost-button detect-button" type="button">
+              <span id="detectHardwareButtonText">检测本机硬件加速能力</span>
+            </button>
+            <div id="hardwareDetectResult" class="hardware-detect-result" hidden>
+              <div id="hardwareDetectList" class="hardware-detect-list"></div>
+            </div>
+          </div>
+
           <label class="field-label" for="hardwareMode">硬件模式</label>
           <select id="hardwareMode">
             <option value="auto" selected>自动选择</option>
